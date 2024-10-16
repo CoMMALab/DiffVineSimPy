@@ -1,14 +1,13 @@
 from .vine import *
 
-
 def vis_init():
     plt.figure(1, figsize=(10, 10))
     
     global main_ax, fig_ax
     main_ax = plt.gca()
     main_ax.set_aspect('equal')
-    main_ax.set_xlim(-ww, ww)
-    main_ax.set_ylim(-ww, ww)
+    # main_ax.set_xlim(-ww, ww)
+    # main_ax.set_ylim(-ww, ww)
     
     plt.figure(2, figsize=(10, 5))
     fig_ax = plt.gca()
@@ -18,14 +17,14 @@ def draw(vine: Vine):
     main_ax.cla()
     
     main_ax.set_aspect('equal')
-    main_ax.set_xlim(-ww, ww)
-    main_ax.set_ylim(-ww, ww)
+    main_ax.set_xlim(-30, 400)
+    main_ax.set_ylim(-490, 30)
     
     # Draw the obstacles
     for obstacle in vine.obstacles:
         obstacle_patch = Rectangle((obstacle[0], obstacle[1]),
                                     obstacle[2] - obstacle[0], obstacle[3] - obstacle[1],
-                                    linewidth=1, edgecolor='r', facecolor='gray')
+                                    linewidth=1, edgecolor='black', facecolor='moccasin')
         main_ax.add_patch(obstacle_patch)
 
     # Draw each body
@@ -59,9 +58,27 @@ def draw(vine: Vine):
             pass 
         
 if __name__ == '__main__':
-    vine = Vine(nbodies=4, init_heading_deg=-45, obstacles = [
-            (40, -70, 55, -10) # x, y, x2, y2
-        ], grow_rate=20)
+    
+    ipm = 39.3701/600 # inches per mm
+    b1 = [5.5/ipm,-5/ipm,4/ipm,7/ipm]
+    b2 = [4/ipm,-17/ipm,7/ipm,5/ipm]
+    b3 = [13.5/ipm,-17/ipm,8/ipm,11/ipm]
+    b4 = [13.5/ipm,-30/ipm,4/ipm,5/ipm]
+    b5 = [20.5/ipm,-30/ipm,4/ipm,5/ipm]
+    b6 = [13.5/ipm,-30/ipm,10/ipm,1/ipm]
+    
+    obstacles = [
+            b1, b2, b3, b4, b5, b6
+        ]
+    
+    for i in range(len(obstacles)):
+        obstacles[i][0] -= 20
+        obstacles[i][1] -= 0
+        
+        obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
+        obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
+        
+    vine = Vine(nbodies=2, init_heading_deg=-45, obstacles=obstacles, grow_rate=250)
     
     vis_init()
     

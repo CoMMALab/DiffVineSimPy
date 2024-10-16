@@ -15,15 +15,15 @@ joint_constraint = []
 class Vine:
     def __init__(self, nbodies, init_heading_deg=45, obstacles=[], grow_rate=10.0):
         self.nbodies = nbodies  # Number of bodies
-        self.dt = 1/90  # Time step
+        self.dt = 1 / 90 # 1/90  # Time step
         self.radius = 15.0 / 2  # Half-length of each body
         self.init_heading = math.radians(init_heading_deg)
         self.grow_rate = grow_rate # Length grown per unit time
         
         # Robot parameters
-        self.m = 0.002 # 0.002  # Mass of each body
-        self.I = 200  # Moment of inertia of each body
-        self.default_body_half_len = 3
+        self.m = 0.000001 # 0.002  # Mass of each body
+        self.I = 10  # Moment of inertia of each body
+        self.default_body_half_len = 9
         
         # Dist from the center of each body to its end
         # Since the last body is connected via sliding joint, it is
@@ -50,8 +50,8 @@ class Vine:
             self.yslice[i] = lasty + self.d[i-1] * torch.sin(lasttheta) + length * torch.sin(thistheta)
         
         # Stiffness and damping coefficients
-        self.stiffness = 30000.0  # Stiffness coefficient
-        self.damping = 10.0       # Damping coefficient
+        self.stiffness = 70_000.0 # 30_000.0  # Stiffness coefficient
+        self.damping = 50.0       # Damping coefficient
 
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
@@ -123,7 +123,7 @@ class Vine:
             # check insideness, flip normal to face out
             isinside = (rect[0] < x) & (x < rect[2]) & (rect[1] < y) & (y < rect[3])
             
-            dist = torch.where(isinside, dist, dist) # FIXME
+            dist = torch.where(isinside, -dist, dist) 
             contactpts = torch.where(isinside[:, None], contactpts, contactpts) # FIXME
                                     
             min_dist[update_min] = dist[update_min]
@@ -208,8 +208,6 @@ class Vine:
             self.xslice[-1] = oldx[-1].clone()
             self.yslice[:-1] = oldy
             self.yslice[-1] = oldy[-1].clone()
-            print('a', oldx[-1], oldy[-1])
-            print('b', self.xslice[-1], self.yslice[-1])
             self.thetaslice[:-1] = oldtheta
             self.thetaslice[-1] = oldtheta[-1].clone()
             
@@ -225,9 +223,9 @@ class Vine:
             self.xslice[-2] = new_seg_x
             self.yslice[-2] = new_seg_y
             self.thetaslice[-2] = new_seg_theta
-            self.dxslice[-2] = self.dxslice[-3]
-            self.dyslice[-2] = self.dyslice[-3]
-            self.dthetaslice[-2] = self.dthetaslice[-3]
+            self.dxslice[-2] = 0 # self.dxslice[-3]
+            self.dyslice[-2] = 0 # self.dyslice[-3]
+            self.dthetaslice[-2] = 0 # self.dthetaslice[-3]
             
             print(self.xslice[-1], self.yslice[-1])
             return True
@@ -283,7 +281,7 @@ class Vine:
     def evolve(self):
         extended = self.extend()
         
-        if extended: return
+        # if extended: return
         
         # Jacobian of SDF with respect to x and y
         L = jacobian(self.sdf, self.state)
@@ -301,8 +299,6 @@ class Vine:
         dtheta_rel = finite_changes(self.dthetaslice, 0.0)
         
         bend_energy = self.bending_energy(theta_rel, dtheta_rel)
-        print('rel bend', theta_rel)
-        print('bend_energy', bend_energy)
         
         forces = torch.zeros(self.nbodies*3)
         forces[self.nbodies*2:] += -bend_energy # Apply bend energy as torque to own joint
@@ -336,7 +332,7 @@ class Vine:
         # Well formedness
         assert problem.is_dpp()
         
-        problem.solve(solver=cp.CLARABEL, max_iter=1000) # requires_grad=True)
+        problem.solve(solver=cp.OSQP) # MOSEK is fast requires_grad=True)
         
         if problem.status != cp.OPTIMAL:
             print("status:", problem.status)

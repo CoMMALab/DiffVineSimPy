@@ -2,7 +2,7 @@
 from matplotlib import pyplot as plt
 import torch
 
-ww = 100
+ww = 400
 main_ax = None
 fig_ax = None
 
