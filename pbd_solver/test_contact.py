@@ -1,7 +1,7 @@
 import unittest
 import torch
 
-from pbd import dist2seg, dist2rect, finite_changes
+from pbd_solver.vine import dist2seg, dist2rect, finite_changes
 
 class TestDistanceFunctions(unittest.TestCase):
 
