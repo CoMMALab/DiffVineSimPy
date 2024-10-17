@@ -1,4 +1,15 @@
-from .vine import *
+        
+import torch
+from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
+from .vine import Vine
+
+import signal
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+ww = 400
+main_ax = None
+fig_ax = None
 
 def vis_init():
     plt.figure(1, figsize=(10, 10))
@@ -9,8 +20,8 @@ def vis_init():
     # main_ax.set_xlim(-ww, ww)
     # main_ax.set_ylim(-ww, ww)
     
-    plt.figure(2, figsize=(10, 5))
-    fig_ax = plt.gca()
+    # plt.figure(2, figsize=(10, 5))
+    # fig_ax = plt.gca()
 
 def draw(vine: Vine):
     global main_ax, fig_ax
@@ -56,41 +67,3 @@ def draw(vine: Vine):
             # Contact point
             # main_ax.arrow(x, y, contact[0] - x, contact[1] - y)
             pass 
-        
-if __name__ == '__main__':
-    
-    ipm = 39.3701/600 # inches per mm
-    b1 = [5.5/ipm,-5/ipm,4/ipm,7/ipm]
-    b2 = [4/ipm,-17/ipm,7/ipm,5/ipm]
-    b3 = [13.5/ipm,-17/ipm,8/ipm,11/ipm]
-    b4 = [13.5/ipm,-30/ipm,4/ipm,5/ipm]
-    b5 = [20.5/ipm,-30/ipm,4/ipm,5/ipm]
-    b6 = [13.5/ipm,-30/ipm,10/ipm,1/ipm]
-    
-    obstacles = [
-            b1, b2, b3, b4, b5, b6
-        ]
-    
-    for i in range(len(obstacles)):
-        obstacles[i][0] -= 20
-        obstacles[i][1] -= 0
-        
-        obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
-        obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
-        
-    vine = Vine(nbodies=2, init_heading_deg=-45, obstacles=obstacles, grow_rate=250)
-    
-    vis_init()
-    
-    draw(vine)
-    plt.pause(0.001)
-    
-    for frame in range(1000):
-        vine.evolve()
-        
-        draw(vine)
-        
-        if frame % 1 == 0:
-            plt.pause(0.001)
-        
-    plt.show()

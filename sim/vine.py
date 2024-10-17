@@ -2,26 +2,87 @@ import math
 import torch
 from torch.autograd.functional import jacobian
 import cvxpy as cp
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-from .util import *
 
-import signal
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-min_term_hist = []
-joint_constraint = []
+def finite_changes(h, init_val):
+    h_rel = torch.empty_like(h)
+    h_rel[0] = h[0] - init_val
+    h_rel[1:] = h[1:] - h[:-1] 
+    
+    return h_rel
+
+def dist2seg(x, y, start, end):
+    '''
+    Given Nx1 x and y points, return closest dist to the seg and normal
+    '''
+    points = torch.stack([x, y], dim=1)
+    
+    # Segment start and end as tensors
+    p1 = torch.tensor(start, dtype=torch.float32)
+    p2 = torch.tensor(end, dtype=torch.float32)
+    
+    # Vector from p1 to p2 (the segment direction)
+    segment = p2 - p1
+    
+    # Vector from p1 to each point
+    p1_to_points = points - p1
+    
+    # Project the point onto the segment, calculate the parameter t
+    segment_length_squared = torch.dot(segment, segment)
+    t = torch.clamp(torch.sum(p1_to_points * segment, dim=1) / segment_length_squared, 0.0, 1.0)
+    
+    # Closest point on the segment to the point
+    closest_point_on_segment = p1 + t[:, None] * segment
+        
+    # Distance from each point to the closest point on the segment
+    distance_vectors = closest_point_on_segment - points 
+    distances = torch.norm(distance_vectors, dim=1)
+    
+    # Normalize the distance vectors to get normal vectors
+    # normals = torch.nn.functional.normalize(distance_vectors, dim=1)
+    normals = distance_vectors
+    
+    return distances, closest_point_on_segment
+    
+def dist2rect(x, y, rect):
+    '''
+    Given Nx1 x and y points, return closest dist to the rect and normal
+    '''
+    x1, y1, x2, y2 = rect
+    
+    # Define the four segments of the rectangle
+    segments = [
+        ((x1, y1), (x2, y1)),  # Bottom edge
+        ((x2, y1), (x2, y2)),  # Right edge
+        ((x2, y2), (x1, y2)),  # Top edge
+        ((x1, y2), (x1, y1))   # Left edge
+    ]
+        
+    # Initialize minimum distances and normals
+    min_distances = torch.full((x.shape[0],), float('inf'), dtype=torch.float32)
+    min_contact_points = torch.zeros((x.shape[0], 2), dtype=torch.float32)
+    
+    # Iterate through each segment and compute the distance and normal
+    for seg_start, seg_end in segments:
+        distances, contact_points = dist2seg(x, y, seg_start, seg_end)
+        
+        # Update the minimum distances and normals where applicable
+        update_mask = distances < min_distances
+        min_distances = torch.where(update_mask, distances, min_distances)
+        min_contact_points = torch.where(update_mask[:, None], contact_points, min_contact_points)
+    
+    return min_distances, min_contact_points
 
 class Vine:
     def __init__(self, nbodies, init_heading_deg=45, obstacles=[], grow_rate=10.0):
         self.nbodies = nbodies  # Number of bodies
-        self.dt = 1 / 90 # 1/90  # Time step
+        self.dt = 1 / 50 # 1/90  # Time step
         self.radius = 15.0 / 2  # Half-length of each body
         self.init_heading = math.radians(init_heading_deg)
         self.grow_rate = grow_rate # Length grown per unit time
         
         # Robot parameters
-        self.m = 0.000001 # 0.002  # Mass of each body
+        self.m = 0.01 # 0.002  # Mass of each body
         self.I = 10  # Moment of inertia of each body
         self.default_body_half_len = 9
         
@@ -50,7 +111,7 @@ class Vine:
             self.yslice[i] = lasty + self.d[i-1] * torch.sin(lasttheta) + length * torch.sin(thistheta)
         
         # Stiffness and damping coefficients
-        self.stiffness = 70_000.0 # 30_000.0  # Stiffness coefficient
+        self.stiffness = 15_000.0 # 30_000.0  # Stiffness coefficient
         self.damping = 50.0       # Damping coefficient
 
         # Environment obstacles (rects only for now)
@@ -164,7 +225,8 @@ class Vine:
         
         # return -(self.K @ theta) - self.C @ dtheta
         return -self.stiffness * theta - self.damping * dtheta
-    
+        # return -self.stiffness * torch.where(torch.abs(theta) < 0.3, theta * 2, theta * 0.5) - self.damping * dtheta
+        # return torch.sign(theta) * -(torch.sin((torch.abs(theta) + 0.1) / 0.3) + 1.4)
     def extend(self):        
         
         # Compute position of second last seg
@@ -343,18 +405,3 @@ class Vine:
         self.state += next_dstate_solution * self.dt
         
         self.dstate = next_dstate_solution
-        
-        # Debug plots
-        min_term = 0.5 * next_dstate_solution @ self.M @ next_dstate_solution - \
-                   next_dstate_solution @ (self.M @ self.dstate - forces * self.dt)
-        
-        min_term_hist.append(min_term)
-        # joint_constraint.append(deviation_now / self.dt + J @ next_dstate_solution)
-        optimzied_deviation = deviation_now / self.dt + J @ next_dstate_solution
-        actual_deviation = self.joint_deviation(self.state)
-        joint_constraint.append(optimzied_deviation.mean())
-        
-        # global fig_ax
-        # fig_ax.cla()
-        # fig_ax.plot(list(range(len(min_term_hist))), min_term_hist, label='min term', c='b')
-        # fig_ax.plot(list(range(len(joint_constraint))), joint_constraint, label='joint contraint', c='g')
