@@ -84,12 +84,12 @@ class Vine:
         # Robot parameters
         self.m = 0.01 # 0.002  # Mass of each body
         self.I = 10  # Moment of inertia of each body
-        self.default_body_half_len = 9
+        self.half_len = 9
         
         # Dist from the center of each body to its end
         # Since the last body is connected via sliding joint, it is
         # not included in this tensor
-        self.d = torch.full((self.nbodies - 1,), fill_value=self.default_body_half_len, dtype=torch.float) 
+        # self.d = torch.full((self.nbodies - 1,), fill_value=self.default_body_half_len, dtype=torch.float) 
 
         # State variables
         self.state = torch.zeros(self.nbodies * 3)
@@ -97,8 +97,8 @@ class Vine:
         
         # Init positions
         self.thetaslice[:] = torch.linspace(self.init_heading, self.init_heading + 0, self.nbodies)
-        self.xslice[0] = self.d[0] * torch.cos(self.thetaslice[0])
-        self.yslice[0] = self.d[0] * torch.sin(self.thetaslice[0])
+        self.xslice[0] = self.half_len * torch.cos(self.thetaslice[0])
+        self.yslice[0] = self.half_len * torch.sin(self.thetaslice[0])
         
         for i in range(1, self.nbodies):
             lastx = self.xslice[i - 1]
@@ -106,9 +106,8 @@ class Vine:
             lasttheta = self.thetaslice[i - 1]
             thistheta = self.thetaslice[i]
             
-            length = self.d[i] if i != self.nbodies - 1 else self.default_body_half_len
-            self.xslice[i] = lastx + self.d[i-1] * torch.cos(lasttheta) + length * torch.cos(thistheta)
-            self.yslice[i] = lasty + self.d[i-1] * torch.sin(lasttheta) + length * torch.sin(thistheta)
+            self.xslice[i] = lastx + self.half_len * torch.cos(lasttheta) + self.half_len * torch.cos(thistheta)
+            self.yslice[i] = lasty + self.half_len * torch.sin(lasttheta) + self.half_len * torch.sin(thistheta)
         
         # Stiffness and damping coefficients
         self.stiffness = 15_000.0 # 30_000.0  # Stiffness coefficient
@@ -204,17 +203,20 @@ class Vine:
         # where each coordinate pair is the deviation with the last body
         constraints = torch.zeros(self.nbodies * 2 - 1)
         
-        constraints[0] = x[0] - self.d[0] * torch.cos(theta[0])
-        constraints[1] = y[0] - self.d[0] * torch.sin(theta[0])
+        constraints[0] = x[0] - self.half_len * torch.cos(theta[0])
+        constraints[1] = y[0] - self.half_len * torch.sin(theta[0])
         
         for j2 in range(1, self.nbodies - 1):
             j1 = j2 - 1
-            constraints[j2 * 2] = (x[j2] - x[j1]) - (self.d[j1] * torch.cos(theta[j1]) + self.d[j2] * torch.cos(theta[j2]))
+            constraints[j2 * 2] = (x[j2] - x[j1]) - (self.half_len * torch.cos(theta[j1]) + self.half_len * torch.cos(theta[j2]))
             
-            constraints[j2 * 2 + 1] = (y[j2] - y[j1]) - (self.d[j1] * torch.sin(theta[j1]) + self.d[j2] * torch.sin(theta[j2]))
+            constraints[j2 * 2 + 1] = (y[j2] - y[j1]) - (self.half_len * torch.sin(theta[j1]) + self.half_len * torch.sin(theta[j2]))
         
         # Last body is special. It has a sliding AND rotation joint with the second-last body
-        constraints[-1] = torch.atan2(y[-1] - y[-2], x[-1] - x[-2]) - theta[-1]
+        endx = x[-2] + self.half_len * torch.cos(theta[-2])
+        endy = y[-2] + self.half_len * torch.sin(theta[-2])
+        
+        constraints[-1] = torch.atan2(y[-1] - endy, x[-1] - endx) - theta[-1]
         
         return constraints
 
@@ -227,27 +229,22 @@ class Vine:
         return -self.stiffness * theta - self.damping * dtheta
         # return -self.stiffness * torch.where(torch.abs(theta) < 0.3, theta * 2, theta * 0.5) - self.damping * dtheta
         # return torch.sign(theta) * -(torch.sin((torch.abs(theta) + 0.1) / 0.3) + 1.4)
-    def extend(self):        
         
+    def extend(self):        
         # Compute position of second last seg
-        endingx = self.xslice[-2] + (self.d[-1]) * torch.cos(self.thetaslice[-2])
-        endingy = self.yslice[-2] + (self.d[-1]) * torch.sin(self.thetaslice[-2])
+        endingx = self.xslice[-2] + self.half_len * torch.cos(self.thetaslice[-2])
+        endingy = self.yslice[-2] + self.half_len * torch.sin(self.thetaslice[-2])
             
-        # Check last body's distance 
+        # Compute last body's distance 
         last_link_distance = ((self.xslice[-1] -endingx)**2 + (self.yslice[-1] - endingy)**2).sqrt()
         last_link_theta = torch.atan2(self.yslice[-1] - self.yslice[-2], self.xslice[-1] - self.xslice[-2])
-        
-        # if last_link_distance/2 > self.default_body_half_len:
-        #     print(f'{last_link_distance} is big, extend')
-            
-        # return
     
-        if last_link_distance/2 > self.default_body_half_len:
-            print(f'{last_link_distance} is big, extend')
+        if last_link_distance > self.half_len * 2: # x2 to prevent 0-len segments
+            print(f'Extending!')
             
             # Compute location of new seg
-            new_seg_x = endingx + self.default_body_half_len * torch.cos(last_link_theta)
-            new_seg_y = endingy + self.default_body_half_len * torch.sin(last_link_theta)
+            new_seg_x = endingx + self.half_len * torch.cos(last_link_theta)
+            new_seg_y = endingy + self.half_len * torch.sin(last_link_theta)
             new_seg_theta = last_link_theta
             
             # Cache old data
@@ -261,7 +258,6 @@ class Vine:
             # Extend state variables
             self.state = torch.cat((self.state, torch.zeros(3)))
             self.dstate = torch.cat((self.dstate, torch.zeros(3)))
-            self.d = torch.cat((self.d, torch.tensor([self.default_body_half_len])))
             self.nbodies += 1
             self.M = self.create_M()
             
@@ -285,11 +281,10 @@ class Vine:
             self.xslice[-2] = new_seg_x
             self.yslice[-2] = new_seg_y
             self.thetaslice[-2] = new_seg_theta
-            self.dxslice[-2] = 0 # self.dxslice[-3]
-            self.dyslice[-2] = 0 # self.dyslice[-3]
-            self.dthetaslice[-2] = 0 # self.dthetaslice[-3]
+            self.dxslice[-2] = 0 
+            self.dyslice[-2] = 0 
+            self.dthetaslice[-2] = 0 
             
-            print(self.xslice[-1], self.yslice[-1])
             return True
         return False
     

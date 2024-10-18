@@ -12,3 +12,20 @@ Make sure you have torch and qpth in your python environment.
 ```bash
 python -m sim.main
 ```
+## TODO
+
+Change to use extension (think about it. friction? bending? batchable?)
+   - Consider a small crack. There should be real strong friction here, vine will not slide backwards
+        So using the constant model will not work
+   - Using extendo model means we can change the resolution by increasing/decreasing resolution
+   - Using constant model means easy batching and gradients
+   
+So we need to batch no matter what. The state vector MUST be constant size.
+We want to compute d x_{t+1} / d x_t  and  d x_{t+1} / d params
+   - Some d values will be invalid. small -> large means some jacobian will be zero
+       That's fine as long as the graph is properly built
+   - During forward sim, need to track the uninited ones
+
+Make data-oriented
+Make batched
+Switch to qpth

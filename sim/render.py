@@ -41,17 +41,17 @@ def draw(vine: Vine):
     # Draw each body
     for i in range(vine.nbodies - 1):
         # Body endpoints
-        x_start = vine.xslice[i] - vine.d[i] * torch.cos(vine.thetaslice[i])
-        y_start = vine.yslice[i] - vine.d[i] * torch.sin(vine.thetaslice[i])
-        x_end = vine.xslice[i] + vine.d[i] * torch.cos(vine.thetaslice[i])
-        y_end = vine.yslice[i] + vine.d[i] * torch.sin(vine.thetaslice[i])
+        x_start = vine.xslice[i] - vine.half_len * torch.cos(vine.thetaslice[i])
+        y_start = vine.yslice[i] - vine.half_len * torch.sin(vine.thetaslice[i])
+        x_end = vine.xslice[i] + vine.half_len * torch.cos(vine.thetaslice[i])
+        y_end = vine.yslice[i] + vine.half_len * torch.sin(vine.thetaslice[i])
 
         main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
         # main_ax.scatter(vine.xslice[i], vine.yslice[i], c='pink', s=radius2pt(vine.radius))       
     
     # Draw last body
-    x_start = vine.xslice[-2] + vine.d[-1] * torch.cos(vine.thetaslice[-2])
-    y_start = vine.yslice[-2] + vine.d[-1] * torch.sin(vine.thetaslice[-2])
+    x_start = vine.xslice[-2] + vine.half_len * torch.cos(vine.thetaslice[-2])
+    y_start = vine.yslice[-2] + vine.half_len * torch.sin(vine.thetaslice[-2])
     x_end = vine.xslice[-1]
     y_end = vine.yslice[-1]
     main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
