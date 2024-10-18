@@ -22,18 +22,19 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
         
-    vine = Vine(nbodies=2, init_heading_deg=-45, obstacles=obstacles, grow_rate=250)
+    params = VineParams(nbodies=2, init_heading_deg=-45, obstacles=obstacles, grow_rate=250) 
     
+    state, dstate = create_state(params)
     
     vis_init()
-    draw(vine)
+    draw(params, state, dstate)
     plt.pause(0.001)
     # plt.show()
     
     for frame in range(1000):
-        vine.evolve()
+        state, dstate = forward(params, state, dstate)
         
-        draw(vine)
+        draw(params, state, dstate)
         
         if frame % 1 == 0:
             plt.pause(0.001)
