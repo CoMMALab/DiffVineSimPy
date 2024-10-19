@@ -23,6 +23,29 @@ def vis_init():
     # plt.figure(2, figsize=(10, 5))
     # fig_ax = plt.gca()
 
+def draw_one_vine(x, y, theta, params):
+    # Draw each body
+    for i in range(x.shape[-1] - 1):
+        # Body endpoints
+        x_start = x[i] - params.half_len * torch.cos(theta[i])
+        y_start = y[i] - params.half_len * torch.sin(theta[i])
+        x_end = x[i] + params.half_len * torch.cos(theta[i])
+        y_end = y[i] + params.half_len * torch.sin(theta[i])
+
+        main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
+        # main_ax.scatter(state.x[i], state.y[i], c='pink', s=radius2pt(vine.radius))       
+    
+    # Draw last body
+    x_start = x[-2] + params.half_len * torch.cos(theta[-2])
+    y_start = y[-2] + params.half_len * torch.sin(theta[-2])
+    x_end = x[-1]
+    y_end = y[-1]
+    main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
+        
+    for x, y in zip(x, y):
+        circle = plt.Circle((x, y), params.radius, color='g', fill=False)
+        main_ax.add_patch(circle)
+        
 def draw(params: VineParams, state, dstate):
     global main_ax, fig_ax
     main_ax.cla()
@@ -40,33 +63,19 @@ def draw(params: VineParams, state, dstate):
                                     obstacle[2] - obstacle[0], obstacle[3] - obstacle[1],
                                     linewidth=1, edgecolor='black', facecolor='moccasin')
         main_ax.add_patch(obstacle_patch)
-
-    # Draw each body
-    for i in range(params.nbodies - 1):
-        # Body endpoints
-        x_start = state.x[i] - params.half_len * torch.cos(state.theta[i])
-        y_start = state.y[i] - params.half_len * torch.sin(state.theta[i])
-        x_end = state.x[i] + params.half_len * torch.cos(state.theta[i])
-        y_end = state.y[i] + params.half_len * torch.sin(state.theta[i])
-
-        main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
-        # main_ax.scatter(state.x[i], state.y[i], c='pink', s=radius2pt(vine.radius))       
     
-    # Draw last body
-    x_start = state.x[-2] + params.half_len * torch.cos(state.theta[-2])
-    y_start = state.y[-2] + params.half_len * torch.sin(state.theta[-2])
-    x_end = state.x[-1]
-    y_end = state.y[-1]
-    main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
+    for i in range(state.x.shape[0]):
+        bodies = params.nbodies[i]
         
-    for x, y in zip(state.x, state.y):
-        circle = plt.Circle((x, y), params.radius, color='g', fill=False)
-        main_ax.add_patch(circle)
+        draw_one_vine(state.x[i][:bodies], 
+                      state.x[i][:bodies], 
+                      state.theta[i][:bodies], 
+                      params)
     
-    if hasattr(params, 'dbg_dist'):
-        for x, y, dist, contact in zip(state.x, state.y, params.dbg_dist, params.dbg_contactpts):
-            # Distance text
-            # main_ax.text(x + 1, y + 0, f'{dist:.3f}')
-            # Contact point
-            # main_ax.arrow(x, y, contact[0] - x, contact[1] - y)
-            pass 
+    # if hasattr(params, 'dbg_dist'):
+    #     for x, y, dist, contact in zip(state.x, state.y, params.dbg_dist, params.dbg_contactpts):
+    #         # Distance text
+    #         # main_ax.text(x + 1, y + 0, f'{dist:.3f}')
+    #         # Contact point
+    #         # main_ax.arrow(x, y, contact[0] - x, contact[1] - y)
+    #         pass 

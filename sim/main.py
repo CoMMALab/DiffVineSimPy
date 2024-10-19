@@ -21,10 +21,13 @@ if __name__ == '__main__':
         
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
-        
-    params = VineParams(nbodies=2, init_heading_deg=-45, obstacles=obstacles, grow_rate=250) 
     
-    state, dstate = create_state(params)
+    max_bodies = 7
+    batch_size = 2
+    params = VineParams(batch_size, max_bodies, init_bodies=4, init_heading_deg=-45, obstacles=obstacles, grow_rate=250) 
+    
+    state, dstate = create_state(batch_size, max_bodies)
+    init_state(params, state, dstate)
     
     vis_init()
     draw(params, state, dstate)
