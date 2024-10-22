@@ -1,0 +1,3 @@
+[submodule "osqpth"]
+	path = osqpth
+	url = https://github.com/osqp/osqpth

@@ -26,7 +26,5 @@ We want to compute d x_{t+1} / d x_t  and  d x_{t+1} / d params
        That's fine as long as the graph is properly built
    - During forward sim, need to track the uninited ones
 
-Make data-oriented
-Make batched
 compile
 Switch to qpth

@@ -174,7 +174,7 @@ class VineParams:
         self.obstacles = torch.tensor(self.obstacles)
         self.segments = generate_segments_from_rectangles(self.obstacles)
         
-        self.M = self.create_M()
+        self.M = create_M(self.m, self.I, self.max_bodies)
         # This converts n-size torques to 3n size dstate
         # self.torque_to_maximal = torch.zeros((3 * self.nbodies, self.nbodies))    
         # for i in range(self.nbodies):            
@@ -188,10 +188,10 @@ class VineParams:
         #     # if i != self.nbodies - 1:
         #     #     self.torque_to_maximal[rot_idx + 3, i] = 1
         
-    def create_M(self):
-        # Update mass matrix M (block diagonal)
-        diagonal_elements = torch.Tensor([self.m, self.m, self.I]).repeat(self.max_bodies)
-        return torch.diag(diagonal_elements)  # Shape: (nq, nq))
+def create_M(m, I, max_bodies):
+    # Update mass matrix M (block diagonal)
+    diagonal_elements = torch.Tensor([m, m, I]).repeat(max_bodies)
+    return torch.diag(diagonal_elements)  # Shape: (nq, nq))
 
 def create_state_batched(batch_size, max_bodies):
     state = torch.zeros(batch_size, max_bodies * 3)

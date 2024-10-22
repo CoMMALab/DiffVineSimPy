@@ -1,7 +1,7 @@
-from sim.solver import solve_cvxpy, solve_qpth, solve_sqpth
+from sim.solver import solve_cvxpy, solve_qpth
 from .vine import *
 from .render import *
-
+import osqpth
 import lovely_tensors as lt
 # lt.monkey_patch()
 torch.set_printoptions(profile='full', linewidth=900, precision=2)
@@ -28,7 +28,7 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
     
-    max_bodies = 40
+    max_bodies = 7
     init_bodies= 4
     batch_size = 6
     params = VineParams(max_bodies, init_heading_deg=-45, obstacles=obstacles, grow_rate=250) 
@@ -68,7 +68,7 @@ if __name__ == '__main__':
         p = forces * dt - torch.matmul(dstate, params.M)
 
         # Expand Q to [batch_size, N, N]
-        Q = params.M.unsqueeze(0).expand(batch_size, -1, -1)
+        Q = params.M# .unsqueeze(0).expand(batch_size, -1, -1)
 
         # Inequality constraints
         G = -L * dt
@@ -88,15 +88,7 @@ if __name__ == '__main__':
         print('g_coeff', g_coeff.shape)
         print('A', A.shape)
         
-        
         # A += 1e-4 * torch.eye(A.shape[2]).unsqueeze(0).expand_as(A)
-        # print('Diagonal size', torch.eye(A.shape[1]).unsqueeze(0).expand_as(A).shape, A.shape)
-        # A += 1e-4 * torch.eye(A.shape[1]).unsqueeze(0).expand_as(A)
-        
-        
-        # diag_indices = torch.arange(A.shape[1], device=A.device)
-        # A[:, diag_indices, diag_indices] += 1e-4
-        
         
         # det_G = torch.linalg.det(G[0])
         # if torch.any(det_G.abs() < 1e-10):
@@ -120,7 +112,39 @@ if __name__ == '__main__':
                         subject to Gz <= h
                                     Az  = b
         '''
-        next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b)
+        # next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
+        
+        # Define epsilon for approximating equality constraints
+        epsilon = 1e-3
+        inf = torch.tensor(float('inf'), device=h.device)
+
+        # Combine inequality and equality constraints
+        A_osqp = torch.cat([G, A], dim=1)  # [batch_size, m_total, N]
+        l_osqp = torch.cat([-inf * torch.ones_like(h), b - epsilon], dim=1)
+        u_osqp = torch.cat([h, b + epsilon], dim=1)
+
+        # Prepare P_val, q_val, A_val
+        P_val = Q.flatten().unsqueeze(0).repeat(batch_size, 1)
+        q_val = p  # [batch_size, N]
+        A_val = A_osqp.reshape(batch_size, -1)
+        l_val = l_osqp
+        u_val = u_osqp
+
+        # Get indices and shapes for P and A
+        P_shape = Q.shape
+        A_shape = A_osqp[0].shape  # Assuming same shape across batch
+
+        # Prepare P_idx and A_idx (since we are using dense matrices, indices can be None)
+        P_idx = None
+        A_idx = None
+
+        # Initialize OSQP solver
+        solver = OSQP(P_idx, P_shape, A_idx, A_shape,
+                    eps_rel=1e-5, eps_abs=1e-5, verbose=False,
+                    max_iter=10000, diff_mode=DiffModes.ACTIVE)
+
+        # Solve the QP problem
+        next_dstate_solution = solver(P_val, q_val, A_val, l_val, u_val)
         
         # Update state and dstate
         state += next_dstate_solution * dt

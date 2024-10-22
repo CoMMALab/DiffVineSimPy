@@ -1,12 +1,20 @@
 import torch
 import cvxpy as cp
-from qpth.qp import QPFunction, QPSolvers
+from qpth.qp import QPFunction, QPSolvers, SpQPFunction
 from torch.autograd import Variable
 
-qp_layer = QPFunction(verbose=False, eps=1e-6, solver=QPSolvers.CVXPY)
+qp_layer = QPFunction(verbose=False, eps=1e-6, solver=QPSolvers.PDIPM_BATCHED)
+
 
 def solve_qpth(Q, p, G, h, A, b):
     return qp_layer(Variable(Q), Variable(p), Variable(G), Variable(h), Variable(A), Variable(b))
+
+
+def solve_sqpth(Q, p, G, h, A, b):
+    # self, Qi, Qsz, Gi, Gsz, Ai, Asz, eps=1e-12, verbose=0, notImprovedLim=3, maxIter=20):
+    solver2 = SpQPFunction(0, Q.shape, 0, G.shape, 0, A.shape, eps=1e-6, verbose=False, notImprovedLim=3, maxIter=20)
+    return solver2(Variable(Q), Variable(p), Variable(G), Variable(h), Variable(A), Variable(b))
+
 
 def solve_cvxpy(Q, p, G, h, A, b):
     
