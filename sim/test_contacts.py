@@ -1,7 +1,7 @@
 import unittest
 import torch
 
-from .vine import dist2seg, dist2rect, finite_changes
+from .vine import finite_changes, dist2segments, generate_segments_from_rectangles
 
 class TestDistanceFunctions(unittest.TestCase):
 
@@ -74,4 +74,28 @@ class TestDistanceFunctions(unittest.TestCase):
         self.assertTrue(torch.allclose(res, torch.tensor([2, 1, 1, 2, 1, 1000]), atol=1e-5))
         
 if __name__ == '__main__':
-    unittest.main()
+    # unittest.main()
+    
+    # 4          5
+    # |          |
+    # 1          2 
+    #  1 -- 3     5 -- 7
+    obstacles = torch.tensor([
+        [1.0, 1.0, 3.0, 4.0],
+        [5.0, 2.0, 7.0, 5.0]
+    ], dtype=torch.float32)
+
+    # Generate segments from obstacles
+    segments = generate_segments_from_rectangles(obstacles)
+
+    # Query points
+    points = torch.tensor([
+        [2.0, 2.0],
+        [6.0, 3.0]
+    ], dtype=torch.float32)
+
+    # Compute distances
+    min_distances, closest_points = dist2segments(points, segments)
+
+    print("Minimum Distances:", min_distances)
+    print("Closest Points on Segments:", closest_points)

@@ -28,4 +28,5 @@ We want to compute d x_{t+1} / d x_t  and  d x_{t+1} / d params
 
 Make data-oriented
 Make batched
+compile
 Switch to qpth

@@ -32,7 +32,7 @@ def draw_one_vine(x, y, theta, params):
         x_end = x[i] + params.half_len * torch.cos(theta[i])
         y_end = y[i] + params.half_len * torch.sin(theta[i])
 
-        main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
+        main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=5)
         # main_ax.scatter(state.x[i], state.y[i], c='pink', s=radius2pt(vine.radius))       
     
     # Draw last body
@@ -40,22 +40,20 @@ def draw_one_vine(x, y, theta, params):
     y_start = y[-2] + params.half_len * torch.sin(theta[-2])
     x_end = x[-1]
     y_end = y[-1]
-    main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=10)
-        
+    main_ax.plot([x_start, x_end], [y_start, y_end], c='blue', linewidth=5)
+    
+    # Draw circle colliders
     for x, y in zip(x, y):
         circle = plt.Circle((x, y), params.radius, color='g', fill=False)
         main_ax.add_patch(circle)
         
-def draw(params: VineParams, state, dstate):
+def draw(params: VineParams, state, dstate, bodies):
     global main_ax, fig_ax
     main_ax.cla()
     
     main_ax.set_aspect('equal')
     main_ax.set_xlim(-30, 400)
     main_ax.set_ylim(-490, 30)
-    
-    state = StateTensor(state)
-    dstate = StateTensor(dstate)
     
     # Draw the obstacles
     for obstacle in params.obstacles:
@@ -64,12 +62,13 @@ def draw(params: VineParams, state, dstate):
                                     linewidth=1, edgecolor='black', facecolor='moccasin')
         main_ax.add_patch(obstacle_patch)
     
-    for i in range(state.x.shape[0]):
-        bodies = params.nbodies[i]
+    for i in range(state.shape[0]):
+        state_item = StateTensor(state[i])
+        len = bodies[i]
         
-        draw_one_vine(state.x[i][:bodies], 
-                      state.x[i][:bodies], 
-                      state.theta[i][:bodies], 
+        draw_one_vine(state_item.x[:len], 
+                      state_item.y[:len], 
+                      state_item.theta[:len], 
                       params)
     
     # if hasattr(params, 'dbg_dist'):

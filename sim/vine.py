@@ -1,11 +1,9 @@
 import math
 import torch
+import functorch
 from torch.autograd.functional import jacobian
 import cvxpy as cp
 from functools import partial
-
-# def jacobian_batched(func, input);
-#     return functorch.vmap(functorch.jacrev(func))(inputs)
     
 def finite_changes(h, init_val):
     h_rel = torch.empty_like(h)
@@ -14,64 +12,110 @@ def finite_changes(h, init_val):
     
     return h_rel
 
-def dist2seg(x, y, start, end):
+def generate_segments_from_rectangles(obstacles):
     '''
-    Given any shape x and y points, return closest dist to the seg and normal
+    obstacles: tensor of shape (num_rectangles, 4), each row is [x1, y1, x2, y2]
+    Returns:
+        segments: tensor of shape (num_rectangles * 4, 4), each row is [x_start, y_start, x_end, y_end]
     '''
-    points = torch.stack([x, y], dim=-1) # [..., 2]
-    
-    # Segment start and end as tensors
-    p1 = torch.tensor(start, dtype=torch.float32)
-    p2 = torch.tensor(end, dtype=torch.float32)
-    
-    # Vector from p1 to p2 (the segment direction)
-    segment = p2 - p1                   # [2]
-    
-    # Vector from p1 to each point
-    p1_to_points = points - p1          # [..., 2]
-    
-    # Project the point onto the segment, calculate the parameter t
-    segment_length_squared = torch.dot(segment, segment) # [1]
-    t = torch.clamp(torch.sum(p1_to_points * segment, dim=-1) / segment_length_squared, 0.0, 1.0) #[...]
-    
-    # print('p1_to_points * segment', (p1_to_points * segment).shape)
-    # print('t', t.shape)
-    
-    # Closest point on the segment to the point
-    closest_point_on_segment = p1 + t[..., None] * segment # [..., 2]
-        
-    # Distance from each point to the closest point on the segment
-    distance_vectors = closest_point_on_segment - points  # [..., 2]
-    distances = torch.norm(distance_vectors, dim=-1)      # [...]
-    
-    # Normalize the distance vectors to get normal vectors
-    # normals = torch.nn.functional.normalize(distance_vectors, dim=1)
-    normals = distance_vectors
-    
-    return distances, closest_point_on_segment
-    
-def dist2rect(x, y, rect):
-    '''
-    Given any shape x and y points, return closest dist to the rect and normal
-    '''
-    x1, y1, x2, y2 = rect
-        
-    # Initialize minimum distances and normals
-    distances = torch.full(x.shape + (4,), float('inf'), dtype=torch.float32)
-    contact_points = torch.zeros(x.shape + (4, 2), dtype=torch.float32)
-    
-    # FIXME. If broken, compute the contact points to debug
-    
-    # Iterate through each segment and compute the distance and normal
-    distances[..., 0], contact_points[..., 0, :] = dist2seg(x, y, (x1, y1), (x2, y1))
-    distances[..., 1], contact_points[..., 1, :] = dist2seg(x, y, (x2, y1), (x2, y2))
-    distances[..., 2], contact_points[..., 2, :] = dist2seg(x, y, (x2, y2), (x1, y2))
-    distances[..., 3], contact_points[..., 3, :] = dist2seg(x, y, (x1, y2), (x1, y1))
+    x1 = obstacles[:, 0]
+    y1 = obstacles[:, 1]
+    x2 = obstacles[:, 2]
+    y2 = obstacles[:, 3]
 
-    result = torch.min(distances, dim=-1)
+    # Side 1: bottom edge
+    starts1 = torch.stack([x1, y1], dim=1)
+    ends1 = torch.stack([x2, y1], dim=1)
 
-    return result.values, None
+    # Side 2: right edge
+    starts2 = torch.stack([x2, y1], dim=1)
+    ends2 = torch.stack([x2, y2], dim=1)
 
+    # Side 3: top edge
+    starts3 = torch.stack([x2, y2], dim=1)
+    ends3 = torch.stack([x1, y2], dim=1)
+
+    # Side 4: left edge
+    starts4 = torch.stack([x1, y2], dim=1)
+    ends4 = torch.stack([x1, y1], dim=1)
+
+    # Stack all starts and ends
+    starts = torch.cat([starts1, starts2, starts3, starts4], dim=0)  # shape (num_rectangles * 4, 2)
+    ends = torch.cat([ends1, ends2, ends3, ends4], dim=0)            # shape (num_rectangles * 4, 2)
+
+    # Combine starts and ends into segments
+    segments = torch.cat([starts, ends], dim=1)  # shape (num_rectangles * 4, 4)
+
+    return segments
+
+def dist2segments(points, segments):
+    '''
+    points: tensor of shape (num_points, 2)
+    segments: tensor of shape (num_segments, 4)
+    Returns:
+        min_distances: tensor of shape (num_points,)
+        closest_points: tensor of shape (num_points, 2)
+        min_indices: tensor of shape (num_points,)  # indices of the closest segments
+    '''
+    # Extract starts and ends
+    starts = segments[:, :2]  # (num_segments, 2)
+    ends = segments[:, 2:]    # (num_segments, 2)
+    AB = ends - starts        # (num_segments, 2)
+    AB_dot = torch.sum(AB * AB, dim=1)  # (num_segments,)
+
+    # Expand dimensions for broadcasting
+    points_expanded = points[:, None, :]  # (num_points, 1, 2)
+    starts_expanded = starts[None, :, :]  # (1, num_segments, 2)
+    AB_expanded = AB[None, :, :]          # (1, num_segments, 2)
+    AB_dot_expanded = AB_dot[None, :]     # (1, num_segments)
+
+    # Compute AP
+    AP = points_expanded - starts_expanded  # (num_points, num_segments, 2)
+
+    # Compute numerator: AP ⋅ AB
+    numerator = torch.sum(AP * AB_expanded, dim=2)  # (num_points, num_segments)
+
+    # Compute t
+    t = numerator / AB_dot_expanded  # (num_points, num_segments)
+    t_clamped = torch.clamp(t, 0.0, 1.0)
+
+    # Compute closest points
+    C = starts_expanded + t_clamped[..., None] * AB_expanded  # (num_points, num_segments, 2)
+
+    # Compute distance vectors
+    distance_vectors = C - points_expanded  # (num_points, num_segments, 2)
+    distances = torch.norm(distance_vectors, dim=2)  # (num_points, num_segments)
+
+    # Find minimum distances and indices
+    min_distances, min_indices = torch.min(distances, dim=1)  # (num_points,)
+    closest_points = C[torch.arange(points.shape[0]), min_indices, :]  # (num_points, 2)
+
+    return min_distances, closest_points
+
+def isinside(points, obstacles):
+    '''
+    Determines if each point is inside any of the given rectangular obstacles.
+    Args:
+        points (torch.Tensor): A tensor of shape (N, 2) representing N points with (x, y) coordinates.
+        obstacles (torch.Tensor): A tensor of shape (M, 4) representing M rectangular obstacles with 
+                                  (x_min, y_min, x_max, y_max) coordinates.
+    Returns:
+        torch.Tensor: A boolean tensor of shape (N,) where each element is True if the corresponding 
+                      point is inside any of the obstacles, and False otherwise.    
+    '''
+    x_min = obstacles[:, 0].unsqueeze(0)  # (1, M)
+    y_min = obstacles[:, 1].unsqueeze(0)  # (1, M)
+    x_max = obstacles[:, 2].unsqueeze(0)  # (1, M)
+    y_max = obstacles[:, 3].unsqueeze(0)  # (1, M)
+    
+    point_x = points[:, 0].unsqueeze(1)  # (N, 1)
+    point_y = points[:, 1].unsqueeze(1)  # (N, 1)
+    
+    # Check if points are within the bounds of any obstacle (batched comparison)
+    inside = (point_x <= x_max) & (point_x >= x_min) & (point_y <= y_max) & (point_y >= y_min) # (N, M)
+    
+    return inside.any(dim=1)  # (N,), True if inside any obstacle
+    
 class StateTensor:
     '''
     Helpful wrapper around a position or velocity state vector, providing
@@ -80,17 +124,17 @@ class StateTensor:
     def __init__(self, tensor):
         self.tensor = tensor
         if tensor.shape[-1] % 3 != 0:
-            raise ValueError("Tensor last dim must be a multiple of 3 for x, y, theta extraction.")
+            raise ValueError(f"Tensor size {tensor.shape} must be 3N")
 
     # Note the following are views
     @property
-    def x(self): return self.tensor[..., 0::3]
+    def x(self): return self.tensor[0::3]
     
     @property
-    def y(self): return self.tensor[..., 1::3]
+    def y(self): return self.tensor[1::3]
     
     @property
-    def theta(self): return self.tensor[..., 2::3]
+    def theta(self): return self.tensor[2::3]
     
 class VineParams:
     '''
@@ -98,11 +142,9 @@ class VineParams:
     TODO make tensors and differentiable
     '''
     
-    def __init__(self, batch_size, max_bodies, init_bodies, init_heading_deg=45, obstacles=[], grow_rate=10.0):
+    def __init__(self, max_bodies, init_heading_deg=45, obstacles=[], grow_rate=10.0):
         self.max_bodies = max_bodies
-        self.batch_size = batch_size
-        self.nbodies = torch.full((batch_size,), fill_value=init_bodies)  # Number of bodies
-        self.dt = 1 / 50 # 1/90  # Time step
+        self.dt = 1 / 90 # 1/90  # Time step
         self.radius = 15.0 / 2  # Half-length of each body
         self.init_heading = math.radians(init_heading_deg)
         self.grow_rate = grow_rate # Length grown per unit time
@@ -112,11 +154,6 @@ class VineParams:
         self.I = 10  # Moment of inertia of each body
         self.half_len = 9
         
-        # Dist from the center of each body to its end
-        # Since the last body is connected via sliding joint, it is
-        # not included in this tensor
-        # self.d = torch.full((self.nbodies - 1,), fill_value=self.default_body_half_len, dtype=torch.float) 
-        
         # Stiffness and damping coefficients
         self.stiffness = 15_000.0 # 30_000.0  # Stiffness coefficient
         self.damping = 50.0       # Damping coefficient
@@ -125,13 +162,17 @@ class VineParams:
         self.obstacles = obstacles
         
         # Make sure x < x2 y < y2 for rectangles
-        for i in range(len(obstacles)):
+        for i in range(len(self.obstacles)):
             # Swap x
             if self.obstacles[i][0] > self.obstacles[i][2]:
                 self.obstacles[i][0], self.obstacles[i][2] = self.obstacles[i][2], self.obstacles[i][0]
             # Swap y
             if self.obstacles[i][1] > self.obstacles[i][3]:
                 self.obstacles[i][1], self.obstacles[i][3] = self.obstacles[i][3], self.obstacles[i][1]
+        
+        # Make a tensor containing a flattened list of segments of shape  4NxN
+        self.obstacles = torch.tensor(self.obstacles)
+        self.segments = generate_segments_from_rectangles(self.obstacles)
         
         self.M = self.create_M()
         # This converts n-size torques to 3n size dstate
@@ -152,82 +193,80 @@ class VineParams:
         diagonal_elements = torch.Tensor([self.m, self.m, self.I]).repeat(self.max_bodies)
         return torch.diag(diagonal_elements)  # Shape: (nq, nq))
 
-def create_state(batch_size, max_bodies):
+def create_state_batched(batch_size, max_bodies):
     state = torch.zeros(batch_size, max_bodies * 3)
     dstate = torch.zeros(batch_size, max_bodies * 3)
     return state, dstate
 
-def init_state(params: VineParams, state, dstate) -> StateTensor:
+def init_state(params: VineParams, state, dstate, bodies, noise_theta_sigma=0, heading_delta=0) -> StateTensor:
     '''
     Create vine state vectors from params
     '''
     state = StateTensor(state)
-    
+        
     # Init first body position
-    state.theta[..., :] = torch.linspace(params.init_heading, params.init_heading + 0, params.max_bodies)
-    state.x[..., 0] = params.half_len * torch.cos(state.theta[..., 0])
-    state.y[..., 0] = params.half_len * torch.sin(state.theta[..., 0])
+    state.theta[:] = torch.linspace(params.init_heading, params.init_heading + heading_delta, params.max_bodies)
+    state.theta[:] += torch.randn_like(state.theta) * noise_theta_sigma
+    
+    state.x[0] = params.half_len * torch.cos(state.theta[0])
+    state.y[0] = params.half_len * torch.sin(state.theta[0])
+    
+    # Inject noise
     
     # Init all body positions
-    for b in range(params.batch_size):
-        for i in range(1, params.max_bodies):
-            if i == params.nbodies[b]: break
-                
-            lastx = state.x[b, i - 1]
-            lasty = state.y[b, i - 1]
-            lasttheta = state.theta[b, i - 1]
-            thistheta = state.theta[b, i]
-            
-            state.x[b, i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
-            state.y[b, i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
+    for i in range(1, bodies):            
+        lastx = state.x[i - 1]
+        lasty = state.y[i - 1]
+        lasttheta = state.theta[i - 1]
+        thistheta = state.theta[i]
+        
+        state.x[i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
+        state.y[i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
 
-def zero_out(ten, nbodies):
-    select_all = torch.arange(ten.shape[0])
+def zero_out(state, bodies):
+    state = StateTensor(state)
+        
+    idx = torch.arange(state.x.shape[-1])
+    mask = idx >= bodies # Mask of uninited values
     
-    indices = torch.zeros_like(ten)
-    indices[:, :] = torch.arange(0, ten.shape[-1])
-    zeros = indices >= nbodies.unsqueeze(-1).repeat(1, ten.shape[-1]) 
-    ten[zeros] = 0
+    state.x[:] = torch.where(mask, 0, state.x)
+    state.y[:] = torch.where(mask, 0, state.y)
+    state.theta[:] = torch.where(mask, 0, state.theta)
+
+def zero_out_custom(state, bodies):        
+    idx = torch.arange(state.shape[-1])
+    mask = idx >= bodies # Mask of uninited values
+    state[:] = torch.where(mask, 0, state)
     
-def sdf(params: VineParams, state):
+def sdf(params: VineParams, state, bodies):
     '''
     TODO radius
     Given Nx1 x and y points, and list of rects, returns
     Nx1 min dist and normals (facing out of rect)
     '''    
-    print(state.shape[:-1])
-    min_dist =       torch.full(state.shape[:-1] + (params.max_bodies,), fill_value=torch.inf) # FIXMWE
-    min_contactpts = torch.full(state.shape[:-1] + (params.max_bodies, 2), fill_value=torch.inf)
-    
     state = StateTensor(state)
     
-    for rect in params.obstacles:
-        dist, contactpts = dist2rect(state.x, state.y, rect)
-        dist -= params.radius
-        
-        update_min = dist < min_dist
-        
-        # check insideness, flip normal to face out
-        isinside = (rect[0] < state.x) & (state.x < rect[2]) & (rect[1] < state.y) & (state.y < rect[3])
-        
-        print(state.x)
-        dist = torch.where(isinside, -dist, dist) 
-        # contactpts = torch.where(isinside[:, None], contactpts, contactpts) # FIXME
-                                
-        min_dist[update_min] = dist[update_min]
-        # min_contactpts[update_min] = contactpts[update_min]
+    points = torch.stack((state.x, state.y), dim=-1)
+    min_dist, min_contactpts = dist2segments(points, params.segments)
     
-    zero_out(min_dist, params.nbodies)
+    inside_points = isinside(points, params.obstacles)
+    
+    min_dist = torch.where(inside_points, -min_dist, min_dist)
+
+    min_dist -= params.radius
+    
+    zero_out_custom(min_dist, bodies)
     
     params.dbg_dist = min_dist
-    # params.dbg_contactpts = min_contactpts
-    return min_dist # min_normal
+    params.dbg_contactpts = min_contactpts
+    return min_dist
 
-def joint_deviation(params: VineParams, state):
+def joint_deviation(params: VineParams, state: torch.Tensor, bodies):
     
     # Vector of deviation per-joint, [x y x2 y2 x3 y3],
     # where each coordinate pair is the deviation with the last body
-    constraints = torch.zeros(params.batch_size, params.max_bodies * 2 + 1)
+    length = state.shape[-1] // 3
+    constraints = state.new_zeros(length * 2)
     
     state = StateTensor(state)
     
@@ -235,231 +274,179 @@ def joint_deviation(params: VineParams, state):
     y = state.y
     theta = state.theta
     
-    constraints[..., 0] = x[..., 0] - params.half_len * torch.cos(theta[..., 0])
-    constraints[..., 1] = y[..., 0] - params.half_len * torch.sin(theta[..., 0])
+    constraints[0] = x[0] - params.half_len * torch.cos(theta[0])
+    constraints[1] = y[0] - params.half_len * torch.sin(theta[0])
+        
+    constraints[2::2] = (x[1:] - x[:-1]) - params.half_len * torch.cos(theta[1:]) \
+                                         - params.half_len * torch.cos(theta[:-1])
     
-    constraints[..., 2:-1:2] = (x[..., 1:] - x[..., :-1]) - params.half_len * torch.cos(theta[..., :-1] 
-                                                        + params.half_len * torch.cos(theta[..., 1:]))
+    constraints[3::2] = (y[1:] - y[:-1]) - params.half_len * torch.sin(theta[1:]) \
+                                         - params.half_len * torch.sin(theta[:-1])
+        
+    # Last body is special. It has a sliding AND rotation joint with the second-last body    
+    endx = x[bodies-2] + params.half_len * torch.cos(theta[bodies-2])
+    endy = y[bodies-2] + params.half_len * torch.sin(theta[bodies-2])
     
-    constraints[..., 3:-1:2] = (y[..., 1:] - y[..., :-1]) - params.half_len * torch.sin(theta[..., :-1] 
-                                                        + params.half_len * torch.sin(theta[..., 1:]))
+    angle_diff = torch.atan2(y[bodies-1] - endy, x[bodies-1] - endx) - theta[bodies-1]
     
-    # Last body is special. It has a sliding AND rotation joint with the second-last body
-    select_all = torch.arange(state.x.shape[0])
-    
-    endx = x[select_all, params.nbodies-2] + params.half_len * torch.cos(theta[select_all, params.nbodies-2])
-    endy = y[select_all, params.nbodies-2] + params.half_len * torch.sin(theta[select_all, params.nbodies-2])
-    
-    constraints[select_all, params.nbodies * 2 - 1] = torch.atan2(y[select_all, params.nbodies-1] - endy, 
-                                                                  x[select_all, params.nbodies-1] - endx) \
-                                                        - theta[select_all, params.nbodies-1]
-    
-    zero_out(constraints, params.nbodies * 2)
-    
+    # So if we have 4 bodies, we have constraints: [x y x y x y dtheta]
+    #                                               0 1 2 3 4 5 6
+    # So the last constraint index is 6 = (bodies-1)*2
+    constraints[(bodies-1)*2] = angle_diff
+        
+    zero_out_custom(constraints, bodies*2-1)
+
     return constraints
 
-def bending_energy(params: VineParams, theta, dtheta):
+def bending_energy(params: VineParams, theta, dtheta, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential 
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
     
     # return -(self.K @ theta) - self.C @ dtheta
     bend = -params.stiffness * theta - params.damping * dtheta
-    zero_out(bend, params.nbodies)
+    zero_out_custom(bend, bodies)
     
     return bend
     # return -self.stiffness * torch.where(torch.abs(theta) < 0.3, theta * 2, theta * 0.5) - self.damping * dtheta
     # return torch.sign(theta) * -(torch.sin((torch.abs(theta) + 0.1) / 0.3) + 1.4)
     
-def extend(params: VineParams, state, dstate):     
-    print('state', state.shape)
+def extend(params: VineParams, state, dstate, bodies):     
     state = StateTensor(state)
     dstate = StateTensor(dstate)
-       
+    
+    new_i = bodies
+    last_i = bodies - 1
+    penult_i = bodies - 2
+    
     # Compute position of second last seg
-    ending_index = params.nbodies - 1
-    penult_index = params.nbodies - 2
-    new_index = params.nbodies
-    
-    print('ending_index', ending_index)
-    
-    select_all = torch.arange(state.x.shape[0])
-    endingx = state.x[select_all, penult_index] + params.half_len * torch.cos(state.theta[select_all, penult_index])
-    endingy = state.y[select_all, penult_index] + params.half_len * torch.sin(state.theta[select_all, penult_index])
-    print('endingx', endingx)
+    endingx = state.x[penult_i] + params.half_len * torch.cos(state.theta[penult_i])
+    endingy = state.y[penult_i] + params.half_len * torch.sin(state.theta[penult_i])
         
     # Compute last body's distance 
-    last_link_distance = ((state.x[select_all, ending_index] - endingx)**2 + \
-                          (state.y[select_all, ending_index] - endingy)**2).sqrt().squeeze(-1)
+    last_link_distance = ((state.x[last_i] - endingx)**2 + \
+                          (state.y[last_i] - endingy)**2).sqrt().squeeze(-1)
     
-    extend_mask = last_link_distance > params.half_len * 2 # x2 to prevent 0-len segments
-    
-    if not torch.any(extend_mask):
-        return
-    
-    select_extends = torch.where(extend_mask)
-    print('select_extends', select_extends)
-       
-    params.nbodies[extend_mask] += 1
-    
-    if torch.any(params.nbodies > params.max_bodies):
-        raise RuntimeError('More bodies than array supports')
-            
+    # x2 to prevent 0-len segments
+    extend_needed = last_link_distance > params.half_len * 2
+                        
     # Compute location of new seg
-    last_link_theta = torch.atan2(state.y[extend_mask][ending_index] - state.y[extend_mask][penult_index], 
-                                  state.x[extend_mask][ending_index] - state.x[extend_mask][penult_index])
+    last_link_theta = torch.atan2(state.y[last_i] - state.y[penult_i], 
+                                  state.x[last_i] - state.x[penult_i])
         
     new_seg_x = endingx + params.half_len * torch.cos(last_link_theta)
     new_seg_y = endingy + params.half_len * torch.sin(last_link_theta)
     new_seg_theta = last_link_theta.squeeze()
-    new_seg_x.squeeze_(-1)
-    new_seg_y.squeeze_(-1)
+        
+    # Copy last body one forward
+    state.x[new_i] = torch.where(extend_needed, state.x[last_i], state.x[new_i])
+    state.y[new_i] = torch.where(extend_needed, state.y[last_i], state.y[new_i])
+    state.theta[new_i] = torch.where(extend_needed, state.theta[last_i], state.theta[new_i])
     
-    print('new_seg_x', new_seg_x.shape)
+    # Copy last body vel too
+    # dstate.x[new_i] = torch.where(extend_needed, dstate.x[last_i], dstate.x[new_i])
+    # dstate.y[new_i] = torch.where(extend_needed, dstate.y[last_i], dstate.y[new_i])
+    # dstate.theta[new_i] = torch.where(extend_needed, dstate.theta[last_i], dstate.theta[new_i])
     
-    # Copy last body one forward (yes you can mix boolean masks and indexes)
-    state.x[select_extends, new_index] = state.x[select_extends, ending_index]
-    state.y[select_extends, new_index] = state.y[select_extends, ending_index]
-    state.theta[select_extends, new_index] = state.theta[select_extends, ending_index]
-    
+    dstate.x[new_i] = 0
+    dstate.y[new_i] = 0
+    dstate.theta[new_i] = 0
+        
     # Set the new segment position
-    state.x[select_extends, ending_index] = new_seg_x[select_extends]
-    state.y[select_extends, ending_index] = new_seg_y[select_extends]
-    state.theta[select_extends, ending_index] = new_seg_theta[select_extends]
+    state.x[last_i] = torch.where(extend_needed, new_seg_x, state.x[last_i])
+    state.y[last_i] = torch.where(extend_needed, new_seg_y, state.y[last_i])
+    state.theta[last_i] = torch.where(extend_needed, new_seg_theta, state.theta[last_i])
     
-    # Set the new segment to have veleocity ofthe one before
-    # FIXME should be tip vel
-    dstate.x[select_extends, ending_index] = dstate.x[select_extends, penult_index]
-    dstate.y[select_extends, ending_index] = dstate.y[select_extends, penult_index]
-    dstate.theta[select_extends, ending_index] = dstate.theta[select_extends, penult_index]
+    # Set the new segment to have velocity of the one before
+    dstate.x[last_i] = torch.where(extend_needed, dstate.x[penult_i], dstate.x[last_i])
+    dstate.y[last_i] = torch.where(extend_needed, dstate.y[penult_i], dstate.y[last_i])
+    dstate.theta[last_i] = torch.where(extend_needed, dstate.theta[penult_i], dstate.theta[last_i])
 
-def grow2(params: VineParams, stateanddstate):   
+    bodies += extend_needed
     
-    half = stateanddstate.shape[-1] // 2
+    zero_out(state.tensor, bodies)
+    zero_out(dstate.tensor, bodies)
     
-    print('stateanddstate', stateanddstate.shape)
-    state = StateTensor(stateanddstate[..., :half])
-    dstate = StateTensor(stateanddstate[..., half:])
+def growth_rate(params: VineParams, state, dstate, bodies):   
+    
+    state = StateTensor(state)
+    dstate = StateTensor(dstate)
+    id1 = bodies - 2
+    id2 = bodies - 1
     
     assert state.tensor.shape == dstate.tensor.shape
-    
-    select_all = torch.arange(state.tensor.shape[0])
-    
+        
     # Now return the constraints for growing the last segment        
-    x1 = state.x[select_all, params.nbodies-2]
-    y1 = state.y[select_all, params.nbodies-2]
-    vx1 = dstate.x[select_all, params.nbodies-2]
-    vy1 = dstate.y[select_all, params.nbodies-2]
+    x1 = state.x[id1]
+    y1 = state.y[id1]
+    vx1 = dstate.x[id1]
+    vy1 = dstate.y[id1]
     
-    x2 = state.x[select_all, params.nbodies-1]
-    y2 = state.y[select_all, params.nbodies-1]
-    vx2 = dstate.x[select_all, params.nbodies-1]
-    vy2 = dstate.y[select_all, params.nbodies-1]
+    x2 = state.x[id2]
+    y2 = state.y[id2]
+    vx2 = dstate.x[id2]
+    vy2 = dstate.y[id2]
         
     constraint = ((x2 - x1) * (vx2 - vx1) + (y2 - y1) * (vy2 - vy1)) / \
                   torch.sqrt((x2 - x1)**2 + (y2 - y1)**2)
         
     return constraint
 
-def grow(self, stateanddstate):
-    constraints = torch.zeros(self.nbodies - 1)
+# def grow(self, stateanddstate):
+#     constraints = torch.zeros(self.nbodies - 1)
     
-    state = stateanddstate[:self.nbodies*3]
-    dstate = stateanddstate[self.nbodies*3:]
+#     state = stateanddstate[:self.nbodies*3]
+#     dstate = stateanddstate[self.nbodies*3:]
     
-    x = state[0:self.nbodies]
-    y = state[self.nbodies:self.nbodies*2]
-    dx = dstate[0:self.nbodies]
-    dy = dstate[self.nbodies:self.nbodies*2]
+#     x = state[0:self.nbodies]
+#     y = state[self.nbodies:self.nbodies*2]
+#     dx = dstate[0:self.nbodies]
+#     dy = dstate[self.nbodies:self.nbodies*2]
     
-    for i in range(self.nbodies-1):
-        x1 = x[i]
-        y1 = y[i]
-        x2 = x[i + 1]
-        y2 = y[i + 1]
+#     for i in range(self.nbodies-1):
+#         x1 = x[i]
+#         y1 = y[i]
+#         x2 = x[i + 1]
+#         y2 = y[i + 1]
         
-        vx1 = dx[i]
-        vy1 = dy[i]
-        vx2 = dx[i + 1]
-        vy2 = dy[i + 1]
+#         vx1 = dx[i]
+#         vy1 = dy[i]
+#         vx2 = dx[i + 1]
+#         vy2 = dy[i + 1]
         
-        constraints[i] = ((x2-x1)*(vx2-vx1) + (y2-y1)*(vy2-vy1)) / \
-                            torch.sqrt((x2-x1)**2 + (y2-y1)**2)
+#         constraints[i] = ((x2-x1)*(vx2-vx1) + (y2-y1)*(vy2-vy1)) / \
+#                             torch.sqrt((x2-x1)**2 + (y2-y1)**2)
         
-    return constraints
+#     return constraints
         
-def solve(params: VineParams, state, dstate, forces, growth, sdf_now, deviation_now, G, L, J):
-    # Solve target
-    next_dstate = cp.Variable((params.max_bodies * 3,)) 
     
-    # Minimization objective
-    # TODO Why subtract forces. Paper and code don't agree
-    objective = cp.Minimize(0.5 * cp.quad_form(next_dstate, params.M) - 
-                            next_dstate.T @ (params.M @ dstate - forces * params.dt))
-
-    # Constrains for non-collision and joint connectivity
+def forward(params: VineParams, state, dstate, bodies):
+    extend(params, state, dstate, bodies)
     
-    growth_wrt_state = G[:params.max_bodies*3]
-    growth_wrt_dstate = G[params.max_bodies*3:]
-    
-    g_con = growth - params.grow_rate - growth_wrt_dstate @ dstate
-    g_coeff = growth_wrt_state * params.dt + growth_wrt_dstate
-    
-    # TODO in the julia they divide sdf_now and deviation_now by dt
-    # technically equivalent, but why? numerical stability?
-    constraints = [ sdf_now + (L @ next_dstate) * params.dt >= 0,
-                    deviation_now + (J @ next_dstate) * params.dt == 0,
-                    g_con + g_coeff @ next_dstate == 0]
-    
-    # TODO For backprop, need to set Parameters
-    problem = cp.Problem(objective, constraints)
-    
-    # Well formedness
-    assert problem.is_dpp()
-    
-    problem.solve(solver=cp.OSQP) # MOSEK is fast requires_grad=True)
-    
-    if problem.status != cp.OPTIMAL:
-        print("status:", problem.status)
-                                    
-    next_dstate_solution = torch.tensor(next_dstate.value, dtype=torch.float)
-    return next_dstate_solution
-        
-def forward(params: VineParams, state, dstate):
-    extend(params, state, dstate)
-        
+    # FIXME make sure we can get gradients for params.xyz
+    # Also cache the 
     # Jacobian of SDF with respect to x and y
-    L = jacobian(partial(sdf, params), state, vectorize=True)
-    sdf_now = sdf(params, state)
+    L = torch.func.jacrev(partial(sdf, params))(state, bodies)
+    sdf_now = sdf(params, state, bodies)
+        
+    # Jacobian of joint deviation wrt state
+    J = torch.func.jacrev(partial(joint_deviation, params))(state, bodies)
+    deviation_now = joint_deviation(params, state, bodies)
     
-    print(f'The jacobian of state {state.shape} -> sdf {sdf_now.shape} is', L.shape)
-    
-    # Jacobian of joint deviation wrt configuration
-    J = jacobian(partial(joint_deviation, params), state, vectorize=True)
-    deviation_now = joint_deviation(params, state)
-    
-    G = jacobian(partial(grow2, params), torch.cat([state, dstate], dim=-1), vectorize=True)
-    growth = grow2(params, torch.cat([state, dstate], dim=-1))
+    # Jacobian of growth rate wrt state
+    growth_wrt_state, growth_wrt_dstate = torch.func.jacrev(partial(growth_rate, params), argnums=(0, 1))(state, dstate, bodies)
+    growth = growth_rate(params, state, dstate, bodies)
     
     # Stiffness forces
     theta_rel = finite_changes(StateTensor(state).theta, params.init_heading)
     dtheta_rel = finite_changes(StateTensor(dstate).theta, 0.0)
     
-    bend_energy = bending_energy(params, theta_rel, dtheta_rel)
+    bend_energy = bending_energy(params, theta_rel, dtheta_rel, bodies)
     
-    forces = StateTensor(torch.zeros(params.batch_size, params.max_bodies * 3))
+    forces = StateTensor(torch.zeros_like(state))
     forces.theta[:] += -bend_energy       # Apply bend energy as torque to own joint
     forces.theta[:-1]  += bend_energy[1:] # Apply bend energy as torque to joint before
     forces = forces.tensor
+            
+    return forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
     
-    next_dstate_solution = torch.zeros((params.batch_size, params.max_bodies*3))
-    
-    for i in range(params.batch_size):
-        next_dstate_solution[i] = solve(params, state[i], dstate[i], forces[i], growth, sdf_now[i], deviation_now[i], G[i], L[i], J[i])
-    
-    # Evolve
-    new_state = state + next_dstate_solution * params.dt
-    
-    new_dstate = next_dstate_solution
-    
-    return new_state, new_dstate
