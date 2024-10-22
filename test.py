@@ -25,6 +25,6 @@ a = torch.tensor([1, 2, 4, 5])
 b = torch.tensor([6, 7, 8, 9])
 
 # Stack them along a new dimension at the end
-stacked_tensor = torch.stack([a, b], dim=-1)
+stacked_tensor = torch.stack([a, b], dim = -1)
 
 print(stacked_tensor)

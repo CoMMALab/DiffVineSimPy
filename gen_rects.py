@@ -1,6 +1,8 @@
 import random
 
+
 def generate_rect_files(n):
+
     def generate_random_rect():
         # Generate random x, y, width, and height within the specified ranges
         x = random.randint(-30, 50)
@@ -15,10 +17,9 @@ def generate_rect_files(n):
         x2, y2, w2, h2 = rect2
 
         # Check for overlap using axis-aligned bounding box (AABB) collision detection
-        if (x1 < x2 + w2 and x1 + w1 > x2 and
-            y1 < y2 + h2 and y1 + h1 > y2):
+        if (x1 < x2 + w2 and x1 + w1 > x2 and y1 < y2 + h2 and y1 + h1 > y2):
             return True
-        
+
         return False
 
     def generate_rectangles():
@@ -48,5 +49,6 @@ def generate_rect_files(n):
             file.write(matrix)
         print(f"Generated {file_name}")
 
+
 # Example usage
-generate_rect_files(500)  # Generates 500 files with random non-overlapping rectangles
+generate_rect_files(500)   # Generates 500 files with random non-overlapping rectangles
