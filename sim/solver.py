@@ -4,41 +4,44 @@ import torch
 import cvxpy as cp
 from qpth.qp import QPFunction, QPSolvers, SpQPFunction
 from torch.autograd import Variable
-from lqp_py import box_qp_control 
+from lqp_py import box_qp_control
 from lqp_py import SolveBoxQP
 
-control = box_qp_control(max_iters=10000, eps_rel=1e-1, eps_abs=1e-1, verbose=True)
-QP = SolveBoxQP(control=control)
+control = box_qp_control(max_iters = 10000, eps_rel = 1e-1, eps_abs = 1e-1, verbose = True)
+QP = SolveBoxQP(control = control)
+
 
 def solve_lqp(Q, p, G, h, A, b):
-    
+
     print('Rank of G', torch.linalg.matrix_rank(G[0]), 'Rank of A', torch.linalg.matrix_rank(A[0]))
     ub, residuals, rank, singular_values = torch.linalg.lstsq(G, h)
-    
+
     ub = ub.unsqueeze(-1)
     p = p.unsqueeze(-1)
     b = b.unsqueeze(-1)
-    
+
     print('Q shape', Q.shape, "p shape", p.shape)
     print('G shape', G.shape, "h shape", h.shape, 'ub shape', ub.shape)
     print('A shape', A.shape, "b shape", b.shape)
-    
+
     lb = torch.full_like(ub, -1000)
-    
+
     # Add some slack to A
     diag = torch.arange(A.shape[1])
     A[:, diag, diag] += 1e-4
 
-    solution = QP.forward(Q=Q, p=p, A=A, b=b, lb=lb, ub=ub)
-    
+    solution = QP.forward(Q = Q, p = p, A = A, b = b, lb = lb, ub = ub)
+
     print('Solution shape', solution.shape)
-    
+
     return solution.squeeze(-1)
 
-qp_layer = QPFunction(verbose = False, eps = 1e-6, solver = QPSolvers.CVXPY)
+
+qp_layer = QPFunction(verbose = False, eps = 1e-6, solver = QPSolvers.PDIPM_BATCHED)
+
 
 def solve_qpth(Q, p, G, h, A, b):
-    return qp_layer(Variable(Q), Variable(p), Variable(G), Variable(h), Variable(A), Variable(b))
+    return qp_layer(Q, p, G, h, A, b)
 
 
 def solve_sqpth(Q, p, G, h, A, b):
@@ -77,9 +80,10 @@ def solve_cvxpy(Q, p, G, h, A, b, **solver_kwargs):
 
     return next_dstate_solution
 
+
 def solve_cvxpy_combined(Q, p, G, h, A, b, **solver_kwargs):
     batch_size = Q.shape[0]
-    n_vars = Q.shape[1]  # Number of variables per problem
+    n_vars = Q.shape[1]    # Number of variables per problem
 
     # Create a single CVXPY variable for all problems
     next_dstate_combined = cp.Variable(batch_size * n_vars)
@@ -121,9 +125,7 @@ def solve_cvxpy_combined(Q, p, G, h, A, b, **solver_kwargs):
 
     total_G_rows = row_offset
     total_G_cols = batch_size * n_vars
-    G_combined = scipy.sparse.coo_matrix(
-        (G_data, (G_rows, G_cols)), shape=(total_G_rows, total_G_cols)
-    )
+    G_combined = scipy.sparse.coo_matrix((G_data, (G_rows, G_cols)), shape = (total_G_rows, total_G_cols))
 
     h_combined = np.array(h_combined)
 
@@ -149,22 +151,20 @@ def solve_cvxpy_combined(Q, p, G, h, A, b, **solver_kwargs):
 
     total_A_rows = row_offset
     total_A_cols = batch_size * n_vars
-    A_combined = scipy.sparse.coo_matrix(
-        (A_data, (A_rows, A_cols)), shape=(total_A_rows, total_A_cols)
-    )
+    A_combined = scipy.sparse.coo_matrix((A_data, (A_rows, A_cols)), shape = (total_A_rows, total_A_cols))
 
     b_combined = np.array(b_combined)
 
     # Define the objective function
     objective = cp.Minimize(
         0.5 * cp.quad_form(next_dstate_combined, Q_combined) + p_combined @ next_dstate_combined
-    )
+        )
 
     # Define the constraints
     constraints = [
         A_combined @ next_dstate_combined == b_combined,
         G_combined @ next_dstate_combined <= h_combined,
-    ]
+        ]
 
     # Form and solve the problem
     problem = cp.Problem(objective, constraints)
@@ -180,7 +180,7 @@ def solve_cvxpy_combined(Q, p, G, h, A, b, **solver_kwargs):
         print("status:", problem.status)
 
     # Extract the solution and reshape it to match the original batch structure
-    next_dstate_combined_value = next_dstate_combined.value  # NumPy array
+    next_dstate_combined_value = next_dstate_combined.value # NumPy array
     next_dstate_solution = torch.from_numpy(next_dstate_combined_value).float().view(batch_size, n_vars)
 
     return next_dstate_solution
