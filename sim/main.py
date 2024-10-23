@@ -1,4 +1,4 @@
-from sim.solver import solve_cvxpy, solve_qpth, solve_sqpth
+from sim.solver import solve_cvxpy, solve_cvxpy_combined, solve_lqp, solve_qpth, solve_sqpth
 from .vine import *
 from .render import *
 
@@ -26,9 +26,9 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
 
-    max_bodies = 40
+    max_bodies = 80
     init_bodies = 4
-    batch_size = 6
+    batch_size = 8
     params = VineParams(max_bodies, init_heading_deg = -45, obstacles = obstacles, grow_rate = 250)
 
     state, dstate = create_state_batched(batch_size, max_bodies)
@@ -43,7 +43,6 @@ if __name__ == '__main__':
     # plt.pause(8)
     # plt.show()
 
-    # torch.compile() does absolutely nothing
     forward_batched = torch.func.vmap(partial(forward, params))
 
     next_dstate_solution = torch.zeros((
@@ -109,10 +108,10 @@ if __name__ == '__main__':
         else:
             print('Q is positive definite')
 
-        for i in range(batch_size):
-            rank_A = torch.linalg.matrix_rank(A[i])
-            if rank_A < A[i].shape[1]:
-                print(f"Batch {i}: Matrix A is rank deficient. Rank: {rank_A}, Expected: {A[i].shape[1]}")
+        # for i in range(batch_size):
+        #     rank_A = torch.linalg.matrix_rank(A[i])
+        #     if rank_A < A[i].shape[1]:
+        #         print(f"Batch {i}: Matrix A is rank deficient. Rank: {rank_A}, Expected: {A[i].shape[1]}")
 
         # Solve the batched QP problem
         '''
@@ -120,7 +119,9 @@ if __name__ == '__main__':
                         subject to Gz <= h
                                     Az  = b
         '''
-        next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b)
+        # next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b, solver=cp.SCS, verbose=False, requires_grad=False)
+        next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
+        # next_dstate_solution = solve_lqp(Q, p, G, h, A, b)
 
         # Update state and dstate
         state += next_dstate_solution * dt
@@ -129,9 +130,9 @@ if __name__ == '__main__':
         if frame > 5:
             total_time += time.time() - start
             total_frames += 1
-            # print('Time per frame: ', total_time / total_frames)
+            print('Time per frame: ', total_time / total_frames)
 
-        if frame % 2 == 0:
+        if frame % 20 == 0:
             draw(params, state, dstate, bodies)
             plt.pause(0.001)
 

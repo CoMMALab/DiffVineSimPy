@@ -26,5 +26,11 @@ We want to compute d x_{t+1} / d x_t  and  d x_{t+1} / d params
        That's fine as long as the graph is properly built
    - During forward sim, need to track the uninited ones
 
-compile
-Switch to qpth
+
+lqp_py
+
+arbitrary start angle and position
+
+parameter fitting on sim
+- how to deal with hidden velocity
+- choose nonlinear optimizer
