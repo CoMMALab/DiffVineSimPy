@@ -359,7 +359,7 @@ def extend(params: VineParams, state, dstate, bodies):
     new_seg_x = endingx + params.half_len * torch.cos(last_link_theta)
     new_seg_y = endingy + params.half_len * torch.sin(last_link_theta)
     new_seg_theta = last_link_theta.squeeze()
-
+    
     # Copy last body one forward
     state.x[new_i] = torch.where(extend_needed, state.x[last_i], state.x[new_i])
     state.y[new_i] = torch.where(extend_needed, state.y[last_i], state.y[new_i])
@@ -379,10 +379,10 @@ def extend(params: VineParams, state, dstate, bodies):
     state.y[last_i] = torch.where(extend_needed, new_seg_y, state.y[last_i])
     state.theta[last_i] = torch.where(extend_needed, new_seg_theta, state.theta[last_i])
 
-    # Set the new segment to have velocity of the one before
-    dstate.x[last_i] = torch.where(extend_needed, dstate.x[penult_i], dstate.x[last_i])
-    dstate.y[last_i] = torch.where(extend_needed, dstate.y[penult_i], dstate.y[last_i])
-    dstate.theta[last_i] = torch.where(extend_needed, dstate.theta[penult_i], dstate.theta[last_i])
+    # Set the new segment to have velocity of the former tip
+    # dstate.x[last_i] = torch.where(extend_needed, dstate.x[penult_i], dstate.x[last_i])
+    # dstate.y[last_i] = torch.where(extend_needed, dstate.y[penult_i], dstate.y[last_i])
+    # dstate.theta[last_i] = torch.where(extend_needed, dstate.theta[penult_i], dstate.theta[last_i])
 
     bodies += extend_needed
 

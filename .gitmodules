@@ -1,3 +1,9 @@
 [submodule "osqpth"]
 	path = osqpth
 	url = https://github.com/osqp/osqpth
+[submodule "scqpth"]
+	path = scqpth
+	url = https://github.com/ipo-lab/scqpth/
+[submodule "lqp_py"]
+	path = lqp_py
+	url = https://github.com/ipo-lab/lqp_py
