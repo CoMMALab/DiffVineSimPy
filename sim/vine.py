@@ -325,8 +325,8 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Can think of the system as always wanting to get rid of potential
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
 
-    # bend = -params.stiffness * theta_rel - params.damping * dtheta_rel
-    bend = -1 * theta_rel.sign() * params.stiffness * 1 / (theta_rel.abs() + 10) - params.damping * dtheta_rel
+    bend = -params.stiffness * theta_rel - params.damping * dtheta_rel
+    # bend = -1 * theta_rel.sign() * params.stiffness * 1 / (theta_rel.abs() + 10) - params.damping * dtheta_rel
     zero_out_custom(bend, bodies)
 
     return bend
