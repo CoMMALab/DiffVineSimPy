@@ -1,30 +1,22 @@
+import cvxpy as cp
 import torch
-# import torch.autograd.functional as F
+from cvxpylayers.torch import CvxpyLayer
 
-# # Define a sample function
-# def my_function(x):
-#     # Some arbitrary differentiable function
-#     return x ** 2 + 3 * x
+n, m = 2, 3
+x = cp.Variable(n)
+A = cp.Parameter((m, n))
+b = cp.Parameter(m)
+constraints = [x >= 0]
+objective = cp.Minimize(0.5 * cp.pnorm(A @ x - b, p=1))
+problem = cp.Problem(objective, constraints)
+assert problem.is_dpp()
 
-# # Input tensor
-# x = torch.tensor([1.0, 2.0, 3.0, 4.0])
+cvxpylayer = CvxpyLayer(problem, parameters=[A, b], variables=[x])
+A_tch = torch.randn(m, n, requires_grad=True)
+b_tch = torch.randn(m, requires_grad=True)
 
-# # Define a mask
-# mask = torch.tensor([1, 0, 1, 0], dtype=torch.bool)
+# solve the problem
+solution, = cvxpylayer(A_tch, b_tch)
 
-# # Apply the mask to the input tensor
-# masked_x = torch.masked.masked_tensor(x, mask=mask)
-
-# # Compute the Jacobian using masked tensor
-# jacobian = F.jacobian(my_function, masked_x)
-
-# print("Jacobian:\n", jacobian)
-
-# Create some example tensors
-a = torch.tensor([1, 2, 4, 5])
-b = torch.tensor([6, 7, 8, 9])
-
-# Stack them along a new dimension at the end
-stacked_tensor = torch.stack([a, b], dim = -1)
-
-print(stacked_tensor)
+# compute the gradient of the sum of the solution with respect to A, b
+solution.sum().backward()

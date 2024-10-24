@@ -4,6 +4,8 @@ This is a differentiable forward-dynamics solver for an extendable, soft vine ro
 
 This work is based on https://github.com/charm-lab/Vine_Simulator. 
 
+Also uses [sqrtm](https://github.com/steveli/pytorch-sqrtm)
+
 ## Install
 Make sure you have torch and qpth in your python environment.
 
@@ -34,3 +36,12 @@ arbitrary start angle and position
 parameter fitting on sim
 - how to deal with hidden velocity
 - choose nonlinear optimizer
+
+## Tuning considerations
+
+iters,
+tol_rel
+
+
+in cone_program.py: mode: (optional) Which mode to compute derivative with, options are
+          ["dense", "lsqr", "lsmr"].

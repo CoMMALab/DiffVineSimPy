@@ -165,8 +165,8 @@ class VineParams:
         self.half_len = 9
 
         # Stiffness and damping coefficients
-        self.stiffness = 15_000.0  # 30_000.0  # Stiffness coefficient
-        self.damping = 50.0        # Damping coefficient
+        self.stiffness = 50_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
+        self.damping = 50.0        # Damping coefficient (too large is instable!)
 
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
@@ -320,13 +320,13 @@ def joint_deviation(params: VineParams, state: torch.Tensor, bodies):
     return constraints
 
 
-def bending_energy(params: VineParams, theta, dtheta, bodies):
+def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
 
-    # return -(self.K @ theta) - self.C @ dtheta
-    bend = -params.stiffness * theta - params.damping * dtheta
+    # bend = -params.stiffness * theta_rel - params.damping * dtheta_rel
+    bend = -1 * theta_rel.sign() * params.stiffness * 1 / (theta_rel.abs() + 10) - params.damping * dtheta_rel
     zero_out_custom(bend, bodies)
 
     return bend

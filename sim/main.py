@@ -1,9 +1,7 @@
-from sim.solver import solve_cvxpy, solve_cvxpy_combined, solve_lqp, solve_qpth, solve_sqpth
+from sim.solver import *
 from .vine import *
 from .render import *
 
-import lovely_tensors as lt
-# lt.monkey_patch()
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
@@ -26,10 +24,10 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
 
-    max_bodies = 80
+    max_bodies = 40
     init_bodies = 4
     batch_size = 8
-    params = VineParams(max_bodies, init_heading_deg = -45, obstacles = obstacles, grow_rate = 250)
+    params = VineParams(max_bodies, init_heading_deg = -45, obstacles = obstacles, grow_rate=100)
 
     state, dstate = create_state_batched(batch_size, max_bodies)
     bodies = torch.full((batch_size, 1), fill_value = init_bodies)
@@ -86,42 +84,17 @@ if __name__ == '__main__':
         A = torch.cat([J * dt, g_coeff], dim = 1)                     # [batch_size, N, N + 9]
         b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
 
-        print('J', J.shape)
-        print('g_coeff', g_coeff.shape)
-        print('A', A.shape)
-
-        # A += 1e-4 * torch.eye(A.shape[2]).unsqueeze(0).expand_as(A)
-        # print('Diagonal size', torch.eye(A.shape[1]).unsqueeze(0).expand_as(A).shape, A.shape)
-        # A += 1e-4 * torch.eye(A.shape[1]).unsqueeze(0).expand_as(A)
-
-        # diag_indices = torch.arange(A.shape[1], device=A.device)
-        # A[:, diag_indices, diag_indices] += 1e-4
-
-        # det_G = torch.linalg.det(G[0])
-        # if torch.any(det_G.abs() < 1e-10):
-        #     print("G is singular or ill-conditioned.")
-
-        try:
-            m = torch.linalg.lu_factor(Q)
-        except:
-            print('Q is not positive definite')
-        else:
-            print('Q is positive definite')
-
-        # for i in range(batch_size):
-        #     rank_A = torch.linalg.matrix_rank(A[i])
-        #     if rank_A < A[i].shape[1]:
-        #         print(f"Batch {i}: Matrix A is rank deficient. Rank: {rank_A}, Expected: {A[i].shape[1]}")
 
         # Solve the batched QP problem
         '''
-        \hat z =   argmin_z 1/2 z^T Q z + p^T z
+             \hat z = argmin_z 1/2 z^T Q z + p^T z
                         subject to Gz <= h
                                     Az  = b
         '''
-        # next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b, solver=cp.SCS, verbose=False, requires_grad=False)
-        next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
-        # next_dstate_solution = solve_lqp(Q, p, G, h, A, b)
+        # next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b, solver=cp.SCS, verbose=False, requires_grad=True)
+        # next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
+        init_layers(params.M, max_bodies * 3, Q.shape[1:], p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
+        next_dstate_solution = solve_layers(p, G, h, A, b)
 
         # Update state and dstate
         state += next_dstate_solution * dt
@@ -132,12 +105,12 @@ if __name__ == '__main__':
             total_frames += 1
             print('Time per frame: ', total_time / total_frames)
 
-        if frame % 20 == 0:
+        if frame % 5 == 0:
             draw(params, state, dstate, bodies)
             plt.pause(0.001)
 
         if torch.any(bodies >= params.max_bodies):
-            raise Exception('At least one instance has reach the max bodies.')
+            raise Exception('At least one instance has reached the max body count.')
 
         print('===========step end============\n\n')
 

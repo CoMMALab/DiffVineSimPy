@@ -7,3 +7,9 @@
 [submodule "lqp_py"]
 	path = lqp_py
 	url = https://github.com/ipo-lab/lqp_py
+[submodule "pytorch-sqrtm"]
+	path = pytorch-sqrtm
+	url = https://github.com/steveli/pytorch-sqrtm
+[submodule "cvxpylayers"]
+	path = cvxpylayers
+	url = https://github.com/Reschivon/cvxpylayers
