@@ -38,8 +38,6 @@ if __name__ == '__main__':
     vis_init()
     draw(params, state, dstate, bodies)
     plt.pause(0.001)
-    # plt.pause(8)
-    # plt.show()
 
     forward_batched = torch.func.vmap(partial(forward, params))
 
@@ -66,7 +64,7 @@ if __name__ == '__main__':
         p = forces * dt - torch.matmul(dstate, params.M)
 
         # Expand Q to [batch_size, N, N]
-        Q = params.M.unsqueeze(0).expand(batch_size, -1, -1)
+        Q = params.M # .unsqueeze(0).expand(batch_size, -1, -1)
 
         # Inequality constraints
         G = -L * dt
@@ -78,23 +76,17 @@ if __name__ == '__main__':
             growth.squeeze(1) - params.grow_rate -
             torch.bmm(growth_wrt_dstate, dstate.unsqueeze(2)).squeeze(2).squeeze(1)
             )
-        g_coeff = (growth_wrt_state * dt + growth_wrt_dstate) # [batch_size, 1, 20N]
+        g_coeff = (growth_wrt_state * dt + growth_wrt_dstate) 
 
         # Prepare equality constraints
-        A = torch.cat([J * dt, g_coeff], dim = 1)                     # [batch_size, N, N + 9]
+        A = torch.cat([J * dt, g_coeff], dim = 1)                     
         b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
 
-
-        # Solve the batched QP problem
-        '''
-             \hat z = argmin_z 1/2 z^T Q z + p^T z
-                        subject to Gz <= h
-                                    Az  = b
-        '''
-        # next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b, solver=cp.SCS, verbose=False, requires_grad=True)
-        # next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
-        init_layers(params.M, max_bodies * 3, Q.shape[1:], p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
-        next_dstate_solution = solve_layers(p, G, h, A, b)
+        init_layers(max_bodies * 3, 
+                    Q.shape, p.shape[1:], 
+                    G.shape[1:], h.shape[1:], 
+                    A.shape[1:], b.shape[1:])
+        next_dstate_solution = solve_layers(Q, p, G, h, A, b)
 
         # Update state and dstate
         state += next_dstate_solution * dt

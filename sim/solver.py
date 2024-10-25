@@ -12,8 +12,7 @@ from .sqrtm import sqrtm
 
 # Set up cvxpylayers constraints
 cvxpylayer = None
-sqrtm_mass = None
-def init_layers(mass_matrix, sol_size, Q_size, p_size, G_size, h_size, A_size, b_size):
+def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_cap = float('inf')):
     '''
     Unbatched sizes
     '''
@@ -35,7 +34,8 @@ def init_layers(mass_matrix, sol_size, Q_size, p_size, G_size, h_size, A_size, b
     objective = cp.Minimize(0.5 * cp.sum_squares(Q_sqrt @ next_dstate) + p @ next_dstate)
     # objective = cp.Minimize(0.5 * cp.quad_form(next_dstate, Q_sqrt) + p @ next_dstate)
 
-    constraints = [A @ next_dstate == b, G @ next_dstate <= h]
+    constraints = [A @ next_dstate == b, 
+                   G @ next_dstate <= h]
                     
     problem = cp.Problem(objective, constraints)
     
@@ -46,10 +46,8 @@ def init_layers(mass_matrix, sol_size, Q_size, p_size, G_size, h_size, A_size, b
                     parameters=[Q_sqrt, p, G, h, A, b], 
                     variables=[next_dstate])
     
-    # Cache the mass matrix      
-    sqrtm_mass = sqrtm(mass_matrix)
 
-def solve_layers(p, G, h, A, b):
+def solve_layers(Q, p, G, h, A, b):
     '''
     Can be batched
     '''
@@ -60,7 +58,7 @@ def solve_layers(p, G, h, A, b):
     
     
     batch_size = p.shape[0]
-    Q_batched = sqrtm_mass.unsqueeze(0).expand(batch_size, -1, -1)
+    Q_batched = sqrtm(Q).unsqueeze(0).expand(batch_size, -1, -1)
     
     solver_args_scs = {'acceleration_lookback': 30_000, 'verbose': False, 'max_iters': 10000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
