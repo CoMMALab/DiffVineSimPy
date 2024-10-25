@@ -50,13 +50,15 @@ def draw_one_vine(x, y, theta, params):
         main_ax.add_patch(circle)
 
 
-def draw(params: VineParams, state, dstate, bodies):
+def draw_batched(params: VineParams, state, bodies, lims=True):
     global main_ax, fig_ax
     main_ax.cla()
 
     main_ax.set_aspect('equal')
-    main_ax.set_xlim(-30, 400)
-    main_ax.set_ylim(-490, 30)
+    
+    if lims:
+        main_ax.set_xlim(-30, 400)
+        main_ax.set_ylim(-490, 30)
 
     # Draw the obstacles
     for obstacle in params.obstacles:

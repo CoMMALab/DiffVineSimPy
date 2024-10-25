@@ -27,7 +27,7 @@ if __name__ == '__main__':
     max_bodies = 40
     init_bodies = 4
     batch_size = 8
-    params = VineParams(max_bodies, init_heading_deg = -45, obstacles = obstacles, grow_rate=100)
+    params = VineParams(max_bodies, init_heading_deg = -45, obstacles = obstacles, grow_rate = 100)
 
     state, dstate = create_state_batched(batch_size, max_bodies)
     bodies = torch.full((batch_size, 1), fill_value = init_bodies)
@@ -36,7 +36,7 @@ if __name__ == '__main__':
         init_state(params, state[i], dstate[i], bodies[i], noise_theta_sigma = 0.4, heading_delta = 0)
 
     vis_init()
-    draw(params, state, dstate, bodies)
+    draw_batched(params, state, dstate, bodies)
     plt.pause(0.001)
     # plt.pause(8)
     # plt.show()
@@ -51,16 +51,16 @@ if __name__ == '__main__':
     # Measure time per frame
     total_time = 0
     total_frames = 0
-    
+
     import theseus as th
-    
+
     for frame in range(1000):
         start = time.time()
-        
+
         state = th.Variable(state)
         dstate = th.Variable(dstate)
         bodies = th.Variable(bodies)
-        
+
         forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
               = forward_batched(state, dstate, bodies)
 
@@ -90,7 +90,6 @@ if __name__ == '__main__':
         A = torch.cat([J * dt, g_coeff], dim = 1)                     # [batch_size, N, N + 9]
         b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
 
-
         # Solve the batched QP problem
         '''
              \hat z = argmin_z 1/2 z^T Q z + p^T z
@@ -99,7 +98,16 @@ if __name__ == '__main__':
         '''
         # next_dstate_solution = solve_cvxpy(Q, p, G, h, A, b, solver=cp.SCS, verbose=False, requires_grad=True)
         # next_dstate_solution = solve_qpth(Q, p, G, h, A, b)
-        init_layers(params.M, max_bodies * 3, Q.shape[1:], p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
+        init_layers(
+            params.M,
+            max_bodies * 3,
+            Q.shape[1:],
+            p.shape[1:],
+            G.shape[1:],
+            h.shape[1:],
+            A.shape[1:],
+            b.shape[1:]
+            )
         next_dstate_solution = solve_layers(p, G, h, A, b)
 
         # Update state and dstate
@@ -112,7 +120,7 @@ if __name__ == '__main__':
             print('Time per frame: ', total_time / total_frames)
 
         if frame % 5 == 0:
-            draw(params, state, dstate, bodies)
+            draw_batched(params, state, dstate, bodies)
             plt.pause(0.001)
 
         if torch.any(bodies >= params.max_bodies):

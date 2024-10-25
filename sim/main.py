@@ -7,7 +7,9 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
 
-def solve(params: VineParams, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate):
+def solve(
+        params: VineParams, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+    ):
     # Convert the values to a shape that qpth can understand
     N = params.max_bodies * 3
     dt = params.dt
@@ -38,12 +40,13 @@ def solve(params: VineParams, forces, growth, sdf_now, deviation_now, L, J, grow
 
     init_layers(N, Q.shape, p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
     next_dstate_solution = solve_layers(Q, p, G, h, A, b)
-    
+
     return next_dstate_solution
-    
+
+
 if __name__ == '__main__':
 
-    ipm = 39.3701 / 600    # inches per mm
+    ipm = 39.3701 / 1000    # inches per mm
     b1 = [5.5 / ipm, -5 / ipm, 4 / ipm, 7 / ipm]
     b2 = [4 / ipm, -17 / ipm, 7 / ipm, 5 / ipm]
     b3 = [15.5 / ipm, -17 / ipm, 8 / ipm, 11 / ipm]
@@ -68,7 +71,7 @@ if __name__ == '__main__':
     init_headings += torch.randn_like(init_headings) * math.radians(0)
     init_x = torch.full((batch_size, 1), 0.0)
     init_y = torch.full((batch_size, 1), 0.0)
-        
+
     params = VineParams(
         max_bodies,
         obstacles = obstacles,
@@ -81,7 +84,7 @@ if __name__ == '__main__':
     init_state_batched(params, state, bodies, init_headings)
 
     vis_init()
-    draw(params, state, dstate, bodies)
+    draw_batched(params, state, bodies)
     plt.pause(0.001)
 
     forward_batched: Callable = torch.func.vmap(partial(forward, params))
@@ -89,19 +92,21 @@ if __name__ == '__main__':
     # Measure time per frame
     total_time = 0
     total_frames = 0
-    
+
     # Init optimization targets
-    params.m = torch.tensor([params.m], dtype = torch.float32, requires_grad=True)
-    params.I = torch.tensor([params.I], dtype = torch.float32, requires_grad=True)
-    
+    params.m = torch.tensor([params.m], dtype = torch.float32, requires_grad = True)
+    params.I = torch.tensor([params.I], dtype = torch.float32, requires_grad = True)
+
     for frame in range(1000):
         start = time.time()
-                
+
         forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
               = forward_batched(init_headings, init_x, init_y, state, dstate, bodies, )
 
-        next_dstate_solution = solve(params, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate)
-                        
+        next_dstate_solution = solve(
+            params, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+            )
+
         # Update state and dstate
         state += next_dstate_solution.detach() * params.dt
         dstate = next_dstate_solution.detach()
@@ -112,7 +117,7 @@ if __name__ == '__main__':
             print('Time per frame: ', total_time / total_frames)
 
         if frame % 2 == 0:
-            draw(params, state, dstate, bodies)
+            draw_batched(params, state, bodies)
             plt.pause(0.001)
 
         if torch.any(bodies >= params.max_bodies):

@@ -1,22 +1,15 @@
-import cvxpy as cp
-import torch
-from cvxpylayers.torch import CvxpyLayer
+import time
 
-n, m = 2, 3
-x = cp.Variable(n)
-A = cp.Parameter((m, n))
-b = cp.Parameter(m)
-constraints = [x >= 0]
-objective = cp.Minimize(0.5 * cp.pnorm(A @ x - b, p=1))
-problem = cp.Problem(objective, constraints)
-assert problem.is_dpp()
+from rich.progress import Progress
 
-cvxpylayer = CvxpyLayer(problem, parameters=[A, b], variables=[x])
-A_tch = torch.randn(m, n, requires_grad=True)
-b_tch = torch.randn(m, requires_grad=True)
+progress = Progress()
 
-# solve the problem
-solution, = cvxpylayer(A_tch, b_tch)
+task1 = progress.add_task("[red]Downloading...", total=1000)
+task2 = progress.add_task("[green]Processing...", total=1000)
+task3 = progress.add_task("[cyan]Cooking...", total=1000)
 
-# compute the gradient of the sum of the solution with respect to A, b
-solution.sum().backward()
+while not progress.finished:
+    progress.update(task1, advance=0.5)
+    progress.update(task2, advance=0.3)
+    progress.update(task3, advance=0.9)
+    time.sleep(0.02)

@@ -107,7 +107,7 @@ def plot_vine_robot(data, rects, step = 1, title = 'Vine Robot Simulation', save
         plt.grid(True)
 
         plt.legend()
-        plt.pause(0.01)    # Pause to simulate real-time visualization
+        plt.pause(0.1)    # Pause to simulate real-time visualization
 
     # If a save path is provided, save the final figure
     if save_to:
@@ -127,7 +127,7 @@ if __name__ == '__main__':
             data, rects = load_vine_robot_csv(filepath)
 
             # Visualize the vine robot configurations
-            plot_vine_robot(data, rects, title = filename, step = 30)
+            plot_vine_robot(data, rects, title = filename, step = 10)
 
     # Load vine robot data from CSV
     # data, rects = load_vine_robot_csv('sim_output/rectangles_200.csv')
