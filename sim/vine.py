@@ -135,15 +135,15 @@ class StateTensor:
     # Note the following are views
     @property
     def x(self):
-        return self.tensor[0::3]
+        return self.tensor[..., 0::3]
 
     @property
     def y(self):
-        return self.tensor[1::3]
+        return self.tensor[..., 1::3]
 
     @property
     def theta(self):
-        return self.tensor[2::3]
+        return self.tensor[..., 2::3]
 
 
 class VineParams:
@@ -152,11 +152,10 @@ class VineParams:
     TODO make tensors and differentiable
     '''
 
-    def __init__(self, max_bodies, init_heading_deg = 45, obstacles = [], grow_rate = 10.0):
+    def __init__(self, max_bodies, obstacles = [], grow_rate = 10.0):
         self.max_bodies = max_bodies
         self.dt = 1 / 90               # 1/90  # Time step
         self.radius = 15.0 / 2         # Half-length of each body
-        self.init_heading = math.radians(init_heading_deg)
         self.grow_rate = grow_rate     # Length grown per unit time
 
         # Robot parameters
@@ -211,36 +210,33 @@ def create_state_batched(batch_size, max_bodies):
     return state, dstate
 
 
-def init_state(
-        params: VineParams, state, dstate, bodies, noise_theta_sigma = 0, heading_delta = 0
+def init_state_batched(
+        params: VineParams, state, bodies, init_headings
     ) -> StateTensor:
     '''
     Create vine state vectors from params
     '''
+    batch_size = state.shape[0]
     state = StateTensor(state)
 
     # Init first body position
-    state.theta[:] = torch.linspace(
-        params.init_heading, params.init_heading + heading_delta, params.max_bodies
-        )
-    state.theta[:] += torch.randn_like(state.theta) * noise_theta_sigma
+    for i in range(batch_size):
+        state.theta[i, :] = init_headings[i]
 
-    state.x[0] = params.half_len * torch.cos(state.theta[0])
-    state.y[0] = params.half_len * torch.sin(state.theta[0])
-
-    # Inject noise
+    state.x[:, 0] = params.half_len * torch.cos(state.theta[:, 0])
+    state.y[:, 0] = params.half_len * torch.sin(state.theta[:, 0])
 
     # Init all body positions
-    for i in range(1, bodies):
-        lastx = state.x[i - 1]
-        lasty = state.y[i - 1]
-        lasttheta = state.theta[i - 1]
-        thistheta = state.theta[i]
+    for batch_i in range(batch_size):
+        for i in range(1, bodies[i]):
+            lastx = state.x[batch_i, i - 1]
+            lasty = state.y[batch_i, i - 1]
+            lasttheta = state.theta[batch_i, i - 1]
+            thistheta = state.theta[batch_i, i]
 
-        state.x[i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
-        state.y[i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
-
-
+            state.x[batch_i, i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
+            state.y[batch_i, i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
+        
 def zero_out(state, bodies):
     state = StateTensor(state)
 
@@ -282,7 +278,7 @@ def sdf(params: VineParams, state, bodies):
     return min_dist
 
 
-def joint_deviation(params: VineParams, state: torch.Tensor, bodies):
+def joint_deviation(params: VineParams, init_x, init_y, state: torch.Tensor, bodies):
 
     # Vector of deviation per-joint, [x y x2 y2 x3 y3],
     # where each coordinate pair is the deviation with the last body
@@ -294,9 +290,9 @@ def joint_deviation(params: VineParams, state: torch.Tensor, bodies):
     x = state.x
     y = state.y
     theta = state.theta
-
-    constraints[0] = x[0] - params.half_len * torch.cos(theta[0])
-    constraints[1] = y[0] - params.half_len * torch.sin(theta[0])
+    
+    constraints[0] = (x[0] - init_x) - params.half_len * torch.cos(theta[0])
+    constraints[1] = (y[0] - init_y) - params.half_len * torch.sin(theta[0])
 
     constraints[2::2] = (x[1:] - x[:-1]) - params.half_len * torch.cos(theta[1:]) \
                                          - params.half_len * torch.cos(theta[:-1])
@@ -415,54 +411,29 @@ def growth_rate(params: VineParams, state, dstate, bodies):
 
     return constraint
 
-
-# def grow(self, stateanddstate):
-#     constraints = torch.zeros(self.nbodies - 1)
-
-#     state = stateanddstate[:self.nbodies*3]
-#     dstate = stateanddstate[self.nbodies*3:]
-
-#     x = state[0:self.nbodies]
-#     y = state[self.nbodies:self.nbodies*2]
-#     dx = dstate[0:self.nbodies]
-#     dy = dstate[self.nbodies:self.nbodies*2]
-
-#     for i in range(self.nbodies-1):
-#         x1 = x[i]
-#         y1 = y[i]
-#         x2 = x[i + 1]
-#         y2 = y[i + 1]
-
-#         vx1 = dx[i]
-#         vy1 = dy[i]
-#         vx2 = dx[i + 1]
-#         vy2 = dy[i + 1]
-
-#         constraints[i] = ((x2-x1)*(vx2-vx1) + (y2-y1)*(vy2-vy1)) / \
-#                             torch.sqrt((x2-x1)**2 + (y2-y1)**2)
-
-#     return constraints
-
-
-def forward(params: VineParams, state, dstate, bodies):
+def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bodies):
     extend(params, state, dstate, bodies)
-
+    
     # Jacobian of SDF with respect to x and y
     L = torch.func.jacrev(partial(sdf, params))(state, bodies)
     sdf_now = sdf(params, state, bodies)
 
     # Jacobian of joint deviation wrt state
-    J = torch.func.jacrev(partial(joint_deviation, params))(state, bodies)
-    deviation_now = joint_deviation(params, state, bodies)
+    J = torch.func.jacrev(partial(joint_deviation, params, init_x, init_y))(state, bodies)
+    deviation_now = joint_deviation(params, init_x, init_y, state, bodies)
 
     # Jacobian of growth rate wrt state
     growth_wrt_state, growth_wrt_dstate = torch.func.jacrev(partial(growth_rate, params), argnums=(0, 1))(state, dstate, bodies)
     growth = growth_rate(params, state, dstate, bodies)
 
     # Stiffness forces
-    theta_rel = finite_changes(StateTensor(state).theta, params.init_heading)
+    theta_rel = finite_changes(StateTensor(state).theta, init_heading)
     dtheta_rel = finite_changes(StateTensor(dstate).theta, 0.0)
-
+    
+    # print('init_heading', init_heading)
+    # print('theta', StateTensor(state).theta)
+    # print('theta_rel', theta_rel)
+    
     bend_energy = bending_energy(params, theta_rel, dtheta_rel, bodies)
 
     forces = StateTensor(torch.zeros_like(state))
