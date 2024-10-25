@@ -128,6 +128,9 @@ class StateTensor:
     '''
 
     def __init__(self, tensor):
+        if isinstance(tensor, StateTensor):
+            raise ValueError("You passed a StateTensor to construct a StateTensor")
+            
         self.tensor = tensor
         if tensor.shape[-1] % 3 != 0:
             raise ValueError(f"Tensor size {tensor.shape} must be 3N")
@@ -155,9 +158,9 @@ class VineParams:
     def __init__(self, max_bodies, obstacles = [], grow_rate = 10.0):
         self.max_bodies = max_bodies
         self.dt = 1 / 90               # 1/90  # Time step
-        self.radius = 15.0 / 2         # Half-length of each body
+        self.radius = 25.0 / 2         # Uncompressed collision radius of each body
         self.grow_rate = grow_rate     # Length grown per unit time
-
+                
         # Robot parameters
         self.m = 0.01  # 0.002  # Mass of each body
         self.I = 10    # Moment of inertia of each body
@@ -166,7 +169,8 @@ class VineParams:
         # Stiffness and damping coefficients
         self.stiffness = 15_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
         self.damping = 50.0        # Damping coefficient (too large is instable!)
-
+        self.vel_damping = 0.1     # Damping coefficient for velocity (too large is instable!)
+        
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
 
@@ -183,24 +187,10 @@ class VineParams:
         self.obstacles = torch.tensor(self.obstacles)
         self.segments = generate_segments_from_rectangles(self.obstacles)
 
-        self.M = create_M(self.m, self.I, self.max_bodies)
-        # This converts n-size torques to 3n size dstate
-        # self.torque_to_maximal = torch.zeros((3 * self.nbodies, self.nbodies))
-        # for i in range(self.nbodies):
-        #     rot_idx = self.nbodies*2 + i
-
-        #     if i != 0:
-        #         self.torque_to_maximal[rot_idx - 1, i] = 1
-
-        #     self.torque_to_maximal[rot_idx, i] = -1
-
-        #     # if i != self.nbodies - 1:
-        #     #     self.torque_to_maximal[rot_idx + 3, i] = 1
-
 
 def create_M(m, I, max_bodies):
     # Update mass matrix M (block diagonal)
-    diagonal_elements = torch.Tensor([m, m, I]).repeat(max_bodies)
+    diagonal_elements = torch.cat([m, m, I]).repeat(max_bodies)
     return torch.diag(diagonal_elements)   # Shape: (nq, nq))
 
 
@@ -210,9 +200,7 @@ def create_state_batched(batch_size, max_bodies):
     return state, dstate
 
 
-def init_state_batched(
-        params: VineParams, state, bodies, init_headings
-    ) -> StateTensor:
+def init_state_batched(params: VineParams, state, bodies, init_headings) -> StateTensor:
     '''
     Create vine state vectors from params
     '''
@@ -234,9 +222,14 @@ def init_state_batched(
             lasttheta = state.theta[batch_i, i - 1]
             thistheta = state.theta[batch_i, i]
 
-            state.x[batch_i, i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
-            state.y[batch_i, i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
-        
+            state.x[
+                batch_i,
+                i] = lastx + params.half_len * torch.cos(lasttheta) + params.half_len * torch.cos(thistheta)
+            state.y[
+                batch_i,
+                i] = lasty + params.half_len * torch.sin(lasttheta) + params.half_len * torch.sin(thistheta)
+
+
 def zero_out(state, bodies):
     state = StateTensor(state)
 
@@ -255,11 +248,18 @@ def zero_out_custom(state, bodies):
 
 
 def sdf(params: VineParams, state, bodies):
-    '''
-    TODO radius
-    Given Nx1 x and y points, and list of rects, returns
-    Nx1 min dist and normals (facing out of rect)
-    '''
+    """
+    Computes the signed distance function (SDF) for given points and obstacles.
+    Args:
+        params:
+        state: vine state N
+        bodies: num bodies per batch item
+    Returns:
+        tuple: 
+            - min_dist (torch.Tensor): N distance from body collider to nearest obstacle
+            - contact_forces (torch.Tensor): Nx2 tensor of forces accounting for squishiness of the vine
+    """
+
     state = StateTensor(state)
 
     points = torch.stack((state.x, state.y), dim = -1)
@@ -268,14 +268,13 @@ def sdf(params: VineParams, state, bodies):
     inside_points = isinside(points, params.obstacles)
 
     min_dist = torch.where(inside_points, -min_dist, min_dist)
-
+    
+    # Make sdf_now negative when uncompressible body penetrates
     min_dist -= params.radius
-
+    
     zero_out_custom(min_dist, bodies)
-
-    params.dbg_dist = min_dist
-    params.dbg_contactpts = min_contactpts
-    return min_dist
+        
+    return min_dist, min_contactpts
 
 
 def joint_deviation(params: VineParams, init_x, init_y, state: torch.Tensor, bodies):
@@ -290,7 +289,7 @@ def joint_deviation(params: VineParams, init_x, init_y, state: torch.Tensor, bod
     x = state.x
     y = state.y
     theta = state.theta
-    
+
     constraints[0] = (x[0] - init_x) - params.half_len * torch.cos(theta[0])
     constraints[1] = (y[0] - init_y) - params.half_len * torch.sin(theta[0])
 
@@ -322,7 +321,10 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
 
     bend = -params.stiffness * theta_rel - params.damping * dtheta_rel
-    # bend = -1 * theta_rel.sign() * params.stiffness * 1 / (theta_rel.abs() + 10) - params.damping * dtheta_rel
+    # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
+
+    # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
+    
     zero_out_custom(bend, bodies)
 
     return bend
@@ -355,7 +357,7 @@ def extend(params: VineParams, state, dstate, bodies):
     new_seg_x = endingx + params.half_len * torch.cos(last_link_theta)
     new_seg_y = endingy + params.half_len * torch.sin(last_link_theta)
     new_seg_theta = last_link_theta.squeeze()
-    
+
     # Copy last body one forward
     state.x[new_i] = torch.where(extend_needed, state.x[last_i], state.x[new_i])
     state.y[new_i] = torch.where(extend_needed, state.y[last_i], state.y[new_i])
@@ -410,14 +412,14 @@ def growth_rate(params: VineParams, state, dstate, bodies):
                   torch.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
     return constraint
-
+    
 def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bodies):
     extend(params, state, dstate, bodies)
-    
-    # Jacobian of SDF with respect to x and y
-    L = torch.func.jacrev(partial(sdf, params))(state, bodies)
-    sdf_now = sdf(params, state, bodies)
 
+    # Jacobian of SDF with respect to x and y
+    L, contact_forces = torch.func.jacrev(partial(sdf, params), has_aux=True)(state, bodies)
+    sdf_now, contact_forces = sdf(params, state, bodies)
+        
     # Jacobian of joint deviation wrt state
     J = torch.func.jacrev(partial(joint_deviation, params, init_x, init_y))(state, bodies)
     deviation_now = joint_deviation(params, init_x, init_y, state, bodies)
@@ -429,16 +431,19 @@ def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bod
     # Stiffness forces
     theta_rel = finite_changes(StateTensor(state).theta, init_heading)
     dtheta_rel = finite_changes(StateTensor(dstate).theta, 0.0)
-    
-    # print('init_heading', init_heading)
-    # print('theta', StateTensor(state).theta)
-    # print('theta_rel', theta_rel)
-    
+
     bend_energy = bending_energy(params, theta_rel, dtheta_rel, bodies)
 
     forces = StateTensor(torch.zeros_like(state))
+    
+    # Apply unbending forces
     forces.theta[:] += -bend_energy        # Apply bend energy as torque to own joint
     forces.theta[:-1] += bend_energy[1:]   # Apply bend energy as torque to joint before
+    
+    # FIXME sign flipped somewhere
+    forces.x[:] += params.vel_damping * StateTensor(dstate).x
+    forces.y[:] += params.vel_damping * StateTensor(dstate).y
+    
     forces = forces.tensor
 
     return forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
