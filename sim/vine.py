@@ -165,7 +165,7 @@ class VineParams:
         self.half_len = 9
 
         # Stiffness and damping coefficients
-        self.stiffness = 50_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
+        self.stiffness = 15_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
         self.damping = 50.0        # Damping coefficient (too large is instable!)
 
         # Environment obstacles (rects only for now)
@@ -447,8 +447,6 @@ def growth_rate(params: VineParams, state, dstate, bodies):
 def forward(params: VineParams, state, dstate, bodies):
     extend(params, state, dstate, bodies)
 
-    # FIXME make sure we can get gradients for params.xyz
-    # Also cache the
     # Jacobian of SDF with respect to x and y
     L = torch.func.jacrev(partial(sdf, params))(state, bodies)
     sdf_now = sdf(params, state, bodies)
