@@ -14,6 +14,12 @@ Make sure you have torch and qpth in your python environment.
 ```bash
 python -m sim.main
 ```
+
+Or for fitting
+```bash
+python -m sim.fitting
+```
+
 ## TODO
 
 Change to use extension (think about it. friction? bending? batchable?)
