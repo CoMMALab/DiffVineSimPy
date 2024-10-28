@@ -7,7 +7,7 @@ This work is based on https://github.com/charm-lab/Vine_Simulator.
 Also uses [sqrtm](https://github.com/steveli/pytorch-sqrtm)
 
 ## Install
-Make sure you have torch and qpth in your python environment.
+Make sure you have torch and cvxpylayers in your python environment.
 
 ## Run
 
@@ -15,7 +15,7 @@ Make sure you have torch and qpth in your python environment.
 python -m sim.main
 ```
 
-Or for fitting
+Or for fitting. There is are some test rollouts sim_results, but for the full dataset of 500 (1.3G) I need to upload that somewhere.
 ```bash
 python -m sim.fitting
 ```
