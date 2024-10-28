@@ -220,7 +220,7 @@ def train(params: VineParams, truth_states):
         # Also, for the hidden velocty value, we start from an initial guess of 0,
         # feed this into forward(), and then use the predictions as the 'ground truth' for the
         # next iteration. This is really crude and I'm not sure it works but will do for now
-        
+
         optimizer.zero_grad()
         # sqrtm_module.
 
@@ -235,23 +235,23 @@ def train(params: VineParams, truth_states):
 
         loss = distances
 
-        loss.backward()
-        
+        # loss.backward()
+
         # This should have reasonable grads
         print('M value', params.m.item(), params.m.grad)
         print('I value', params.I.item(), params.I.grad)
         print('stiffness value', params.stiffness.item(), params.stiffness.grad)
-        
+
         # See how damping has no grads? That's because dstate isn't part of our loss function. This is a problem for later
         print('damping value', params.damping.item(), params.damping.grad)
         # This should have grads, but it doesn't and I don't know why
         print('grow_rate value', params.grow_rate.item(), params.grow_rate.grad)
 
         optimizer.step()
-        
+
         # Every step, we'll visualize a different batch item
         idx_to_view = iter % train_batch_size
-        
+
         # Visualize the ground truth
         draw_batched(
             params,
@@ -261,15 +261,22 @@ def train(params: VineParams, truth_states):
             clear = True,
             obstacles = True
             )
-        
+
         # Uncomment to also visualize the predicted state
-        draw_batched(params, pred_state[None, idx_to_view].detach(), pred_bodies[None, idx_to_view].detach(),
-                    lims=False, clear=True, obstacles=True)
+        draw_batched(
+            params,
+            pred_state[None, idx_to_view].detach(),
+            pred_bodies[None, idx_to_view].detach(),
+            lims = False,
+            clear = False,
+            obstacles = False
+            )
 
         plt.xlim([-0.1, 1])
         plt.ylim([-1, 0.1])
+        plt.title(f'Comparing truth and pred for t = {idx_to_view}')
         plt.pause(0.001)
-        
+
         print(f'End of iter {iter}, loss {loss.item()}\n')
 
     # Evolve and visualize the state starting from truth_states[0]
@@ -313,7 +320,7 @@ if __name__ == '__main__':
     # Get files sorted in number order
     files = os.listdir(directory)
     files_sorted = sorted(files, key = lambda x: int(x.split('_')[1].split('.')[0]))
-    
+
     # Load all the data into `states`` and `scenes``
     for filename in files_sorted:
         if filename.endswith('.csv'):
@@ -354,7 +361,7 @@ if __name__ == '__main__':
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
         )
-    
+
     # Initial guess values
     params.half_len = 3.0 / ipm / 1000 / 2
     params.radius = 15.0 / 2 / ipm / 1000 * 0.1
@@ -376,14 +383,12 @@ if __name__ == '__main__':
             scene[i] = list(scene[i])
             scene[i][2] = scene[i][0] + scene[i][2]
             scene[i][3] = scene[i][1] + scene[i][3]
-        
+
         # Convert the obstacles to segments in a form we can use later
         params.obstacles = torch.tensor(scene)
         params.segments = generate_segments_from_rectangles(params.obstacles)
 
         truth_states = torch.from_numpy(state)
-        T = state.shape[0]
-        truth_bodies = 25 * 2
 
         # Train, using the given params as config and (for optimzied vars)
         # initial guess. Then truth states should be a TxS trajectory over T timesteps
