@@ -171,14 +171,16 @@ def train(params: VineParams, truth_states):
         truth_states (torch.Tensor) [T, 3N]: 
     '''
     
-    model_input_batch = truth_states.shape[0] - 1
-    
+    # train_batch_size = truth_states.shape[0] - 1
+    print('Total GT frames', truth_states.shape[0])
+    train_batch_size = 200 # FIXME
+        
     # Construct initial state
-    init_headings = torch.full((model_input_batch, 1), fill_value = -52 * math.pi / 180)
-    init_x = torch.full((model_input_batch, 1), 0.0)
-    init_y = torch.full((model_input_batch, 1), 0.0)
+    init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
+    init_x = torch.full((train_batch_size, 1), 0.0)
+    init_y = torch.full((train_batch_size, 1), 0.0)
     
-    _, pred_dstate = create_state_batched(model_input_batch, params.max_bodies)
+    _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
     # bodies = torch.full((model_input_batch, 1), fill_value = init_bodies, dtype=torch.long)
     # init_state_batched(params, pred_state, bodies, init_headings)
     
@@ -214,63 +216,76 @@ def train(params: VineParams, truth_states):
     params.grow_rate.requires_grad_()
     
     optimizer = torch.optim.SGD([params.m, params.I, params.stiffness, params.damping, params.grow_rate], 
-                lr = 0.01)
+                lr = 0.0001)
     
     # Get truth state except for the last frame
-    init_states, init_bodies = convert_to_valid_state(init_x, init_y, truth_states[:-1], params.half_len, params.max_bodies)
+    init_states, init_bodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
     
     # Evolve and visualize the state at truth_states[0]
-    state_now = init_states[0:1]
-    dstate_now = torch.zeros_like(state_now)
-    bodies_now = init_bodies[0:1]
-    for frame in range(0, init_states.shape[0], 13):
-        # Evolve
-        state_now, dstate_now, bodies_now = evolve(init_headings[0:1], init_x[0:1], init_y[0:1], state_now, dstate_now, bodies_now)
+    # state_now = init_states[0:1]
+    # dstate_now = torch.zeros_like(state_now)
+    # bodies_now = init_bodies[0:1]
+    # for frame in range(0, init_states.shape[0], 13):
+    #     # Evolve
+    #     state_now, dstate_now, bodies_now = evolve(init_headings[0:1], init_x[0:1], init_y[0:1], state_now, dstate_now, bodies_now)
         
-        # Draw
-        state_now = state_now.detach()
-        bodies = bodies.detach()
-        draw_batched(params, init_states[frame:frame+1], init_bodies[frame:frame+1], lims=False, clear=True, obstacles=True)
-        draw_batched(params, state_now, bodies, lims=False, clear=False, obstacles=False)
-        plt.pause(0.001)
+    #     # Loss
+    #     distances = distance(state_now, bodies_now, truth_states[frame:frame+1])
+    #     print('distances', distances)
+    #     loss = distances.mean()
+    #     loss.backward()
+    #     # optimizer.step()
+    #     # state_now.mean().backward()
+    #     print(state_now.grad, bodies_now.grad)
+    #     print('new M', params.m, params.m.grad)
         
-        # bodies[frame:frame+1]
+    #     # Draw
+    #     state_now = state_now.detach()
+    #     bodies_now = bodies_now.detach()
+    #     draw_batched(params, init_states[frame:frame+1], init_bodies[frame:frame+1], lims=False, clear=True, obstacles=True)
+    #     draw_batched(params, state_now, bodies_now, lims=False, clear=False, obstacles=False)
+    #     plt.pause(0.001)
+        
+    #     # bodies[frame:frame+1]
         
     
     # Train loop
-    # for _ in tqdm.tqdm(range(100)):
-    #     # On each loop, we feed the truth state into forward, and get the 
-    #     # predicted next state. Then compute loss and backprop
-    #     # Also, for the hidden velocty value, we start from an initial guess of 0,
-    #     # and feed the estimate_dstate as the input to the next batch 
+    for iter in tqdm.tqdm(range(100)):
+        # On each loop, we feed the truth state into forward, and get the 
+        # predicted next state. Then compute loss and backprop
+        # Also, for the hidden velocty value, we start from an initial guess of 0,
+        # and feed the estimate_dstate as the input to the next batch 
         
-    #     pred_state, pred_dstate = evolve(truth_states, pred_dstate, bodies)
+        pred_state, pred_dstate, pred_bodies = evolve(init_headings, init_x, init_y, init_states, pred_dstate, init_bodies)
         
-    #     # Set the predicted velocity as the input to the next tiemstep
-    #     pred_dstate[:, 1:] = pred_dstate[:, :-1]
-    #     pred_dstate[:, 0] = 0
+        # Set the predicted velocity as the input to the next tiemstep
+        pred_dstate[:, 1:] = pred_dstate[:, :-1]
+        pred_dstate[:, 0] = 0 # Begin with 0 velocity
         
-    #     # Compute loss
-    #     distances = distance(pred_state, bodies, truth_states)
+        # Compute loss
+        distances = distance(pred_state, pred_bodies, init_states)
+        loss = distances.mean()
+        loss.backward()
         
-    #     print('last state', pred_state[-1], bodies[-1])
+        print('M value', params.m, params.m.grad)
         
-    #     draw_batched(params, 
-    #                 pred_state[-1:-1],
-    #                 bodies[-1:-1], lims=False, clear=True, obstacles=True)
+        optimizer.step()
+        
+        iter_to_view = iter % train_batch_size
+        draw_batched(params, init_states[None, iter_to_view], init_bodies[None, iter_to_view], lims=False, clear=True, obstacles=True)
+        
+        # draw_batched(params, pred_state[None, iter_to_view].detach(), pred_bodies[None, iter_to_view].detach(), 
+        #             lims=False, clear=True, obstacles=True)
                     
-    #     draw_batched(params, 
-    #                 truth_states[-1:-1],
-    #                 [nbodies], lims=False, clear=False, obstacles=False)
                     
-    #     plt.xlim([-0.1, 1])
-    #     plt.ylim([-1, 0.1])
-    #     # plt.pause(0.001)
-    #     plt.show()
+        plt.xlim([-0.1, 1])
+        plt.ylim([-1, 0.1])
+        plt.pause(0.001)
+        # plt.show()
         
         
-    #     sim_states.append(state[0])
-    #     bodies_over_time.append(bodies[0])
+        # sim_states.append(state[0])
+        # bodies_over_time.append(bodies[0])
                 
     # sim_states = torch.stack(sim_states, dim = 0)
         
@@ -331,7 +346,7 @@ if __name__ == '__main__':
     params.I = torch.tensor([5], dtype = torch.float32)
     params.stiffness = torch.tensor([30_000.0], dtype = torch.float32)
     params.damping = torch.tensor([10.0], dtype = torch.float32)
-    params.grow_rate = torch.tensor([8 / ipm / 1000 * 1.45], dtype = torch.float32)
+    params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
 
     # Render the loaded data
     vis_init()
