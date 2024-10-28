@@ -224,6 +224,8 @@ def train(params: VineParams, truth_states):
         optimizer.zero_grad()
         # sqrtm_module.
 
+        # HACK: Detach the prior iteration so gradients won't depend on non-existant parts of the computational graph
+        pred_dstate = pred_dstate.detach()
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y, true_states, pred_dstate, true_nbodies)
 
         # Set the predicted velocity as the input to the next timestep

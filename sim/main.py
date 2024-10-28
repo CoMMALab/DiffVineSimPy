@@ -62,7 +62,7 @@ if __name__ == '__main__':
     for frame in range(1000):
         start = time.time()
 
-        forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
+        bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
               = forward_batched(init_headings, init_x, init_y, state, dstate, bodies, )
 
         next_dstate_solution = solve(
