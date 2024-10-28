@@ -5,22 +5,24 @@ import cvxpy as cp
 from cvxpylayers.torch import CvxpyLayer
 from qpth.qp import QPFunction, QPSolvers, SpQPFunction
 from torch.autograd import Variable
-from lqp_py import box_qp_control
-from lqp_py import SolveBoxQP
+# from lqp_py import box_qp_control
+# from lqp_py import SolveBoxQP
 
-from .sqrtm import MatrixSquareRoot, sqrtm 
+from .sqrtm import MatrixSquareRoot, sqrtm
 
 # Set up cvxpylayers constraints
 cvxpylayer = None
+
+
 def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_cap = float('inf')):
     '''
     Set up the cvxpylayer for the QP problem (inputs are unbatched sizes)
     '''
-    
+
     global cvxpylayer
     if cvxpylayer is not None:
         return
-    
+
     # Tell cvxpy what params can be differentiable
     next_dstate = cp.Variable(sol_size)
     Q_sqrt = cp.Parameter(Q_size)
@@ -29,46 +31,44 @@ def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_ca
     h = cp.Parameter(h_size)
     A = cp.Parameter(A_size)
     b = cp.Parameter(b_size)
-    
+
     # print('Q size', Q_size, 'p size', p_size, 'G size', G_size, 'h size', h_size, 'A size', A_size, 'b size', b_size)
-    
+
     objective = cp.Minimize(0.5 * cp.sum_squares(Q_sqrt @ next_dstate) + p @ next_dstate)
     # objective = cp.Minimize(0.5 * cp.quad_form(next_dstate, Q_sqrt) + p @ next_dstate)
 
-    constraints = [A @ next_dstate == b, 
-                   G @ next_dstate <= h]
-                    
+    constraints = [A @ next_dstate == b, G @ next_dstate <= h]
+
     problem = cp.Problem(objective, constraints)
-    
+
     print('is dcp?', problem.is_dcp())
     # assert problem.is_dpp()
-    
-    cvxpylayer = CvxpyLayer(problem, 
-                    parameters=[Q_sqrt, p, G, h, A, b], 
-                    variables=[next_dstate])
-    
+
+    cvxpylayer = CvxpyLayer(problem, parameters = [Q_sqrt, p, G, h, A, b], variables = [next_dstate])
+
+
 sqrtm_module = MatrixSquareRoot()
+
 
 def solve_layers(Q, p, G, h, A, b):
     '''
     Batched QP solve, internally uses cvxpylayers
     '''
     global cvxpylayer
-    
+
     # solver_args = {'ignore_dpp': True, 'max_iters': 100000}
     # Args to SCS, not cvxpy!
-    
-    
+
     batch_size = p.shape[0]
     Q_batched = sqrtm_module.apply(Q).unsqueeze(0).expand(batch_size, -1, -1)
-    
+
     solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
-        
-    solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args=solver_args_scs)
 
-        
+    solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args = solver_args_scs)
+
     return solution[0]
+
 
 def solve_cvxpy(Q, p, G, h, A, b, **solver_kwargs):
 
@@ -103,6 +103,7 @@ def solve_cvxpy(Q, p, G, h, A, b, **solver_kwargs):
 
 # control = box_qp_control(max_iters = 1000, eps_rel = 1e-1, eps_abs = 1e-1, verbose = True)
 # QP = SolveBoxQP(control = control)
+
 
 def solve_lqp(Q, p, G, h, A, b):
 
@@ -145,6 +146,7 @@ def solve_sqpth(Q, p, G, h, A, b):
         0, Q.shape, 0, G.shape, 0, A.shape, eps = 1e-6, verbose = False, notImprovedLim = 3, maxIter = 20
         )
     return solver2(Variable(Q), Variable(p), Variable(G), Variable(h), Variable(A), Variable(b))
+
 
 def solve_cvxpy_combined(Q, p, G, h, A, b, **solver_kwargs):
     batch_size = Q.shape[0]
