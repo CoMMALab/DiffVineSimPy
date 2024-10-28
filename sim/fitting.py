@@ -79,20 +79,6 @@ def distance(state, bodies, true_state, true_bodies):
     return avg_distance    # [1] tensor
 
 
-# def convert_truths(truth_states):
-#     # timesteps = truth_states.shape[0]
-#     # num_bodies = truth_states.shape[1] // 3
-#     # truth_states = truth_states.view(-1, num_bodies, 3)
-
-#     # # Take the mean of each body pair
-#     # truth_states_mean = (truth_states[:, 0::2, :] + truth_states[:, 1::2, :]) / 2
-#     # truth_states_mean = truth_states_mean.view(timesteps, -1)
-
-#     # assert truth_states_mean.shape[1] == num_bodies * 3 // 2
-
-#     # return truth_states_mean.type(torch.float32)
-
-
 def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
     '''
     Given a batch of N points BxN, where N is the sequence (x, y, t, x2, y2, t2, ...),
@@ -213,9 +199,6 @@ def train(params: VineParams, truth_states):
 
     _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
 
-    # draw_batched(params, state, bodies, lims=False)
-    # plt.pause(0.001)
-
     # Set up training
     params.m.requires_grad_()
     params.I.requires_grad_()
@@ -228,7 +211,7 @@ def train(params: VineParams, truth_states):
         )
 
     # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
-    init_states, init_bodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
+    true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
 
     # Train loop
     for iter in range(100):
@@ -236,48 +219,58 @@ def train(params: VineParams, truth_states):
         # predicted next state. Then compute loss and backprop
         # Also, for the hidden velocty value, we start from an initial guess of 0,
         # feed this into forward(), and then use the predictions as the 'ground truth' for the
-        # next iteration
+        # next iteration. This is really crude and I'm not sure it works but will do for now
         
         optimizer.zero_grad()
         # sqrtm_module.
 
-        pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y, init_states, pred_dstate, init_bodies)
+        pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y, true_states, pred_dstate, true_nbodies)
 
-        # Set the predicted velocity as the input to the next tiemstep
+        # Set the predicted velocity as the input to the next timestep
         pred_dstate[:, 1:] = pred_dstate[:, :-1]
-        pred_dstate[:, 0] = 0  # Begin with 0 velocity
+        pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
 
         # Compute loss
-        distances = distance(pred_state, pred_bodies, init_states, init_bodies)
+        distances = distance(pred_state, pred_bodies, true_states, true_nbodies)
 
         loss = distances
 
         loss.backward()
-
+        
+        # This should have reasonable grads
         print('M value', params.m.item(), params.m.grad)
+        print('I value', params.I.item(), params.I.grad)
+        print('stiffness value', params.stiffness.item(), params.stiffness.grad)
+        
+        # See how damping has no grads? That's because dstate isn't part of our loss function. This is a problem for later
+        print('damping value', params.damping.item(), params.damping.grad)
+        # This should have grads, but it doesn't and I don't know why
+        print('grow_rate value', params.grow_rate.item(), params.grow_rate.grad)
 
         optimizer.step()
         
         # Every step, we'll visualize a different batch item
+        idx_to_view = iter % train_batch_size
         
         # Visualize the ground truth
-        idx_to_view = iter % train_batch_size
         draw_batched(
             params,
-            init_states[None, idx_to_view],
-            init_bodies[None, idx_to_view],
+            true_states[None, idx_to_view],
+            true_nbodies[None, idx_to_view],
             lims = False,
             clear = True,
             obstacles = True
             )
         
         # Uncomment to also visualize the predicted state
-        # draw_batched(params, pred_state[None, iter_to_view].detach(), pred_bodies[None, iter_to_view].detach(),
-        #             lims=False, clear=True, obstacles=True)
+        draw_batched(params, pred_state[None, idx_to_view].detach(), pred_bodies[None, idx_to_view].detach(),
+                    lims=False, clear=True, obstacles=True)
 
         plt.xlim([-0.1, 1])
         plt.ylim([-1, 0.1])
         plt.pause(0.001)
+        
+        print(f'End of iter {iter}, loss {loss.item()}\n')
 
     # Evolve and visualize the state starting from truth_states[0]
     # state_now = init_states[0:1]
