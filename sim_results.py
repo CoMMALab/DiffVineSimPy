@@ -46,8 +46,16 @@ def plot_vine_robot(data, rects, step = 1, title = 'Vine Robot Simulation', save
 
     # Loop through each time step (each row in data)
     q_size = data.shape[1] // 2
+    links = 25
 
     for timestep in range(0, data.shape[0], step):
+        plt.figure(2)
+        plt.cla()
+        # Make the color a rainbow
+        cmap = plt.get_cmap('rainbow')
+        plt.scatter(data[timestep, 0:links*6:3], data[timestep, 1:links*6:3], c=range(len(data[timestep, 0:links*6:3])), cmap=cmap)
+        
+        plt.figure(1)
         plt.clf()  # Clear figure before each frame
 
         # Draw obstacles
@@ -67,7 +75,7 @@ def plot_vine_robot(data, rects, step = 1, title = 'Vine Robot Simulation', save
         # For each link
         for i in range(1, links):
             idx = 6 * (i - 1)
-
+            
             # Proximal endpoint
             x1 = data[timestep, idx + 0]
             y1 = data[timestep, idx + 1]
@@ -125,7 +133,7 @@ if __name__ == '__main__':
 
             # Load vine robot data from CSV
             data, rects = load_vine_robot_csv(filepath)
-
+            
             # Visualize the vine robot configurations
             plot_vine_robot(data, rects, title = filename, step = 10)
 

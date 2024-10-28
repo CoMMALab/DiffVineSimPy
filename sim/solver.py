@@ -29,7 +29,7 @@ def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_ca
     A = cp.Parameter(A_size)
     b = cp.Parameter(b_size)
     
-    print('Q size', Q_size, 'p size', p_size, 'G size', G_size, 'h size', h_size, 'A size', A_size, 'b size', b_size)
+    # print('Q size', Q_size, 'p size', p_size, 'G size', G_size, 'h size', h_size, 'A size', A_size, 'b size', b_size)
     
     objective = cp.Minimize(0.5 * cp.sum_squares(Q_sqrt @ next_dstate) + p @ next_dstate)
     # objective = cp.Minimize(0.5 * cp.quad_form(next_dstate, Q_sqrt) + p @ next_dstate)
@@ -62,6 +62,7 @@ def solve_layers(Q, p, G, h, A, b):
     
     solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
+        
     solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args=solver_args_scs)
 
         

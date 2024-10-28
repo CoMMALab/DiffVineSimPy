@@ -37,7 +37,7 @@ def solve(
     # Prepare equality constraints
     A = torch.cat([J * dt, g_coeff], dim = 1)
     b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
-
+    
     init_layers(N, Q.shape, p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
     next_dstate_solution = solve_layers(Q, p, G, h, A, b)
 

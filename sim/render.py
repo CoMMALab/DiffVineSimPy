@@ -50,33 +50,36 @@ def draw_one_vine(x, y, theta, params):
         main_ax.add_patch(circle)
 
 
-def draw_batched(params: VineParams, state, bodies, lims=True):
+def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obstacles=True):
     global main_ax, fig_ax
-    main_ax.cla()
+    
+    if clear:
+        main_ax.cla()
 
-    main_ax.set_aspect('equal')
+        main_ax.set_aspect('equal')
     
     if lims:
         main_ax.set_xlim(-30, 400)
         main_ax.set_ylim(-490, 30)
 
     # Draw the obstacles
-    for obstacle in params.obstacles:
-        obstacle_patch = Rectangle(
-            (obstacle[0], obstacle[1]),
-            obstacle[2] - obstacle[0],
-            obstacle[3] - obstacle[1],
-            linewidth = 1,
-            edgecolor = 'black',
-            facecolor = 'moccasin'
-            )
-        main_ax.add_patch(obstacle_patch)
-
+    if obstacles:
+        for obstacle in params.obstacles:
+            obstacle_patch = Rectangle(
+                (obstacle[0], obstacle[1]),
+                obstacle[2] - obstacle[0],
+                obstacle[3] - obstacle[1],
+                linewidth = 1,
+                edgecolor = 'black',
+                facecolor = 'moccasin'
+                )
+            main_ax.add_patch(obstacle_patch)
+        
     for i in range(state.shape[0]):
         state_item = StateTensor(state[i])
-        len = bodies[i]
-
-        draw_one_vine(state_item.x[:len], state_item.y[:len], state_item.theta[:len], params)
+        leng = bodies[i]
+        
+        draw_one_vine(state_item.x[:leng], state_item.y[:leng], state_item.theta[:leng], params)
 
     # if hasattr(params, 'dbg_dist'):
     #     for x, y, dist, contact in zip(state.x, state.y, params.dbg_dist, params.dbg_contactpts):

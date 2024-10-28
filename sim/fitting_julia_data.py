@@ -102,5 +102,5 @@ if __name__ == '__main__':
     plt.pause(0.001)
     for frame in range(T):
         print(f'Frame {frame}')
-        draw_batched(params, q[None, frame], v[None, frame], [10], lims=False)
+        draw_batched(params, q[None, frame], [10], lims=False)
         plt.pause(0.001)

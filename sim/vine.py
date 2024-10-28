@@ -148,7 +148,6 @@ class StateTensor:
     def theta(self):
         return self.tensor[..., 2::3]
 
-
 class VineParams:
     '''
     Time indepedent parameters.
@@ -382,10 +381,12 @@ def extend(params: VineParams, state, dstate, bodies):
     # dstate.y[last_i] = torch.where(extend_needed, dstate.y[penult_i], dstate.y[last_i])
     # dstate.theta[last_i] = torch.where(extend_needed, dstate.theta[penult_i], dstate.theta[last_i])
 
-    bodies += extend_needed
+    bodies = bodies + extend_needed
 
     zero_out(state.tensor, bodies)
     zero_out(dstate.tensor, bodies)
+    
+    return bodies
 
 
 def growth_rate(params: VineParams, state, dstate, bodies):
@@ -414,7 +415,7 @@ def growth_rate(params: VineParams, state, dstate, bodies):
     return constraint
     
 def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bodies):
-    extend(params, state, dstate, bodies)
+    bodies = extend(params, state, dstate, bodies)
 
     # Jacobian of SDF with respect to x and y
     L, contact_forces = torch.func.jacrev(partial(sdf, params), has_aux=True)(state, bodies)
@@ -446,4 +447,4 @@ def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bod
     
     forces = forces.tensor
 
-    return forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+    return bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
