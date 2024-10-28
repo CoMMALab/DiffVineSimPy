@@ -8,19 +8,20 @@ from torch.autograd import Variable
 from lqp_py import box_qp_control
 from lqp_py import SolveBoxQP
 
-from .sqrtm import sqrtm 
+from .sqrtm import MatrixSquareRoot, sqrtm 
 
 # Set up cvxpylayers constraints
 cvxpylayer = None
 def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_cap = float('inf')):
     '''
-    Unbatched sizes
+    Set up the cvxpylayer for the QP problem (inputs are unbatched sizes)
     '''
     
-    global cvxpylayer, sqrtm_mass
+    global cvxpylayer
     if cvxpylayer is not None:
         return
-        
+    
+    # Tell cvxpy what params can be differentiable
     next_dstate = cp.Variable(sol_size)
     Q_sqrt = cp.Parameter(Q_size)
     p = cp.Parameter(p_size)
@@ -46,10 +47,11 @@ def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_ca
                     parameters=[Q_sqrt, p, G, h, A, b], 
                     variables=[next_dstate])
     
+sqrtm_module = MatrixSquareRoot()
 
 def solve_layers(Q, p, G, h, A, b):
     '''
-    Can be batched
+    Batched QP solve, internally uses cvxpylayers
     '''
     global cvxpylayer
     
@@ -58,7 +60,7 @@ def solve_layers(Q, p, G, h, A, b):
     
     
     batch_size = p.shape[0]
-    Q_batched = sqrtm(Q).unsqueeze(0).expand(batch_size, -1, -1)
+    Q_batched = sqrtm_module.apply(Q).unsqueeze(0).expand(batch_size, -1, -1)
     
     solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}

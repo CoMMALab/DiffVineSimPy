@@ -6,47 +6,9 @@ from typing import Callable
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
-
-def solve(
-        params: VineParams, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
-    ):
-    # Convert the values to a shape that qpth can understand
-    N = params.max_bodies * 3
-    dt = params.dt
-    M = create_M(params.m, params.I, params.max_bodies)
-
-    # Compute c
-    p = forces * dt - torch.matmul(dstate, M)
-
-    # Expand Q to [batch_size, N, N]
-    Q = M
-    # Q = params.M.unsqueeze(0).expand(batch_size, -1, -1)
-
-    # Inequality constraints
-    G = -L * dt
-    h = sdf_now
-
-    # Equality constraints
-    # Compute growth constraint components
-    g_con = (
-        growth.squeeze(1) - params.grow_rate -
-        torch.bmm(growth_wrt_dstate, dstate.unsqueeze(2)).squeeze(2).squeeze(1)
-        )
-    g_coeff = (growth_wrt_state * dt + growth_wrt_dstate)
-
-    # Prepare equality constraints
-    A = torch.cat([J * dt, g_coeff], dim = 1)
-    b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
-    
-    init_layers(N, Q.shape, p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
-    next_dstate_solution = solve_layers(Q, p, G, h, A, b)
-
-    return next_dstate_solution
-
-
 if __name__ == '__main__':
 
-    ipm = 39.3701 / 1000    # inches per mm
+    ipm = 39.3701 / 1000   # inches per mm
     b1 = [5.5 / ipm, -5 / ipm, 4 / ipm, 7 / ipm]
     b2 = [4 / ipm, -17 / ipm, 7 / ipm, 5 / ipm]
     b3 = [15.5 / ipm, -17 / ipm, 8 / ipm, 11 / ipm]
@@ -87,7 +49,7 @@ if __name__ == '__main__':
     draw_batched(params, state, bodies)
     plt.pause(0.001)
 
-    forward_batched: Callable = torch.func.vmap(partial(forward, params))
+    forward_batched: Callable = torch.func.vmap(partial(forward_batched_part, params))
 
     # Measure time per frame
     total_time = 0

@@ -5,6 +5,8 @@ from torch.autograd.functional import jacobian
 import cvxpy as cp
 from functools import partial
 
+from sim.solver import init_layers, solve_layers
+
 
 def finite_changes(h, init_val):
     h_rel = torch.empty_like(h)
@@ -130,7 +132,7 @@ class StateTensor:
     def __init__(self, tensor):
         if isinstance(tensor, StateTensor):
             raise ValueError("You passed a StateTensor to construct a StateTensor")
-            
+
         self.tensor = tensor
         if tensor.shape[-1] % 3 != 0:
             raise ValueError(f"Tensor size {tensor.shape} must be 3N")
@@ -148,6 +150,7 @@ class StateTensor:
     def theta(self):
         return self.tensor[..., 2::3]
 
+
 class VineParams:
     '''
     Time indepedent parameters.
@@ -159,7 +162,7 @@ class VineParams:
         self.dt = 1 / 90               # 1/90  # Time step
         self.radius = 25.0 / 2         # Uncompressed collision radius of each body
         self.grow_rate = grow_rate     # Length grown per unit time
-                
+
         # Robot parameters
         self.m = 0.01  # 0.002  # Mass of each body
         self.I = 10    # Moment of inertia of each body
@@ -169,7 +172,7 @@ class VineParams:
         self.stiffness = 15_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
         self.damping = 50.0        # Damping coefficient (too large is instable!)
         self.vel_damping = 0.1     # Damping coefficient for velocity (too large is instable!)
-        
+
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
 
@@ -267,12 +270,12 @@ def sdf(params: VineParams, state, bodies):
     inside_points = isinside(points, params.obstacles)
 
     min_dist = torch.where(inside_points, -min_dist, min_dist)
-    
+
     # Make sdf_now negative when uncompressible body penetrates
     min_dist -= params.radius
-    
+
     zero_out_custom(min_dist, bodies)
-        
+
     return min_dist, min_contactpts
 
 
@@ -323,7 +326,7 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
 
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
-    
+
     zero_out_custom(bend, bodies)
 
     return bend
@@ -385,7 +388,7 @@ def extend(params: VineParams, state, dstate, bodies):
 
     zero_out(state.tensor, bodies)
     zero_out(dstate.tensor, bodies)
-    
+
     return bodies
 
 
@@ -413,14 +416,21 @@ def growth_rate(params: VineParams, state, dstate, bodies):
                   torch.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
     return constraint
+
+
+def forward_batched_part(params: VineParams, init_heading, init_x, init_y, state, dstate, bodies):
+    '''
+    Compute some jacobians about this state wrt forces, growth, sdf_now
     
-def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bodies):
+    This function is separated from the QP solving stuff in forward() because it later
+    gets compiled into a batched function using vmap, but we can't also compile the QP stuff
+    '''
     bodies = extend(params, state, dstate, bodies)
 
     # Jacobian of SDF with respect to x and y
-    L, contact_forces = torch.func.jacrev(partial(sdf, params), has_aux=True)(state, bodies)
+    L, contact_forces = torch.func.jacrev(partial(sdf, params), has_aux = True)(state, bodies)
     sdf_now, contact_forces = sdf(params, state, bodies)
-        
+
     # Jacobian of joint deviation wrt state
     J = torch.func.jacrev(partial(joint_deviation, params, init_x, init_y))(state, bodies)
     deviation_now = joint_deviation(params, init_x, init_y, state, bodies)
@@ -436,15 +446,89 @@ def forward(params: VineParams, init_heading, init_x, init_y, state, dstate, bod
     bend_energy = bending_energy(params, theta_rel, dtheta_rel, bodies)
 
     forces = StateTensor(torch.zeros_like(state))
-    
+
     # Apply unbending forces
     forces.theta[:] += -bend_energy        # Apply bend energy as torque to own joint
     forces.theta[:-1] += bend_energy[1:]   # Apply bend energy as torque to joint before
-    
+
     # FIXME sign flipped somewhere
     forces.x[:] += params.vel_damping * StateTensor(dstate).x
     forces.y[:] += params.vel_damping * StateTensor(dstate).y
-    
+
     forces = forces.tensor
 
     return bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+
+
+forward_batched = torch.func.vmap(forward_batched_part, in_dims = (None, 0, 0, 0, 0, 0, 0))
+
+
+def solve(
+        params: VineParams,
+        dstate,
+        forces,
+        growth,
+        sdf_now,
+        deviation_now,
+        L,
+        J,
+        growth_wrt_state,
+        growth_wrt_dstate
+    ):
+    '''
+    Given some physics data (batched) about the current vine state, find the next state by reexpressing the problem as a QP
+    '''
+    # Convert the values to a shape that qpth can understand
+    N = params.max_bodies * 3
+    dt = params.dt
+    M = create_M(params.m, params.I, params.max_bodies)
+
+    # Compute c
+    p = forces * dt - torch.matmul(dstate, M)
+
+    # Expand Q to [batch_size, N, N]
+    Q = M
+    # Q = params.M.unsqueeze(0).expand(batch_size, -1, -1)
+
+    # Inequality constraints
+    G = -L * dt
+    h = sdf_now
+
+    # Equality constraints
+    # Compute growth constraint components
+    g_con = (
+        growth.squeeze(1) - params.grow_rate -
+        torch.bmm(growth_wrt_dstate, dstate.unsqueeze(2)).squeeze(2).squeeze(1)
+        )
+    g_coeff = (growth_wrt_state * dt + growth_wrt_dstate)
+
+    # Prepare equality constraints
+    A = torch.cat([J * dt, g_coeff], dim = 1)
+    b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
+
+    init_layers(N, Q.shape, p.shape[1:], G.shape[1:], h.shape[1:], A.shape[1:], b.shape[1:])
+    next_dstate_solution = solve_layers(Q, p, G, h, A, b)
+
+    return next_dstate_solution
+
+
+def forward(params: VineParams, init_headings, init_x, init_y, state, dstate, bodies):
+    '''
+    Convenience function that takes an batched input state/dstate, and returns the next state/dstate (also batched)
+    '''
+    # Assert all types are float32
+    assert state.dtype == torch.float32
+    assert dstate.dtype == torch.float32
+
+    bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
+        = forward_batched(params, init_headings, init_x, init_y, state, dstate, bodies)
+
+    next_dstate_solution = solve(
+        params, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+        )
+
+    # Update state and dstate
+    new_state = state + next_dstate_solution * params.dt
+    new_dstate = next_dstate_solution
+
+    return new_state, new_dstate, bodies

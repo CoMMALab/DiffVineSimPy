@@ -41,7 +41,7 @@ if __name__ == '__main__':
     # plt.pause(8)
     # plt.show()
 
-    forward_batched = torch.func.vmap(partial(forward, params))
+    forward_batched = torch.func.vmap(partial(forward_batched_part, params))
 
     next_dstate_solution = torch.zeros((
         batch_size,
