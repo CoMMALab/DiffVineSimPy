@@ -23,34 +23,8 @@ python -m sim.fitting
 
 During fitting you can run `tensorboard --logdir=runs` to see tensorboard, but I recommend using the vscode integration, the button above `import tensorboard` opens it as a tab in vscode
 
-## TODO
+## Notes
 
-Change to use extension (think about it. friction? bending? batchable?)
-   - Consider a small crack. There should be real strong friction here, vine will not slide backwards
-        So using the constant model will not work
-   - Using extendo model means we can change the resolution by increasing/decreasing resolution
-   - Using constant model means easy batching and gradients
-   
-So we need to batch no matter what. The state vector MUST be constant size.
-We want to compute d x_{t+1} / d x_t  and  d x_{t+1} / d params
-   - Some d values will be invalid. small -> large means some jacobian will be zero
-       That's fine as long as the graph is properly built
-   - During forward sim, need to track the uninited ones
+For the fitting, the starting legnth is different so that makes it have a constant offset throughout
 
-
-lqp_py
-
-arbitrary start angle and position
-
-parameter fitting on sim
-- how to deal with hidden velocity
-- choose nonlinear optimizer
-
-## Tuning considerations
-
-iters,
-tol_rel
-
-
-in cone_program.py: mode: (optional) Which mode to compute derivative with, options are
-          ["dense", "lsqr", "lsmr"].
+Also 

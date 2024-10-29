@@ -164,13 +164,15 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
             if i == links: i -= 1
 
             # Then add the next one
+            last_x = points_tensor[b, total_bodies - 1, 0]
+            last_y = points_tensor[b, total_bodies - 1, 1]
             next_x = state[b, i * 3].item()
             next_y = state[b, i * 3 + 1].item()
             points_tensor[b, total_bodies, 0] = next_x
             points_tensor[b, total_bodies, 1] = next_y
             points_tensor[b, total_bodies, 2] = math.atan2(
-                next_y - points_tensor[b, total_bodies - 1, 1],
-                next_x - points_tensor[b, total_bodies - 1, 0]
+                next_y - last_y,
+                next_x - last_x
                 )
 
             total_bodies += 1
@@ -218,17 +220,19 @@ def train(params: VineParams, truth_states, optimizer, writer):
         # sqrtm_module.
 
         # HACK: Detach the prior iteration so gradients won't depend on non-existant parts of the computational graph
-        pred_dstate = pred_dstate.detach()
+        pred_dstate = pred_dstate.detach().clone()
+        true_states = true_states.detach().clone()
+        true_nbodies = true_nbodies.detach().clone()
         
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
-                true_states.detach().clone(), pred_dstate.clone(), true_nbodies)
+                true_states, pred_dstate, true_nbodies)
 
         # Set the predicted velocity as the input to the next timestep
         pred_dstate[:, 1:] = pred_dstate[:, :-1]
         pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
 
-        # Compute loss
-        distances = distance(pred_state, pred_bodies, true_states, true_nbodies)
+        # Compute loss (note prediction for idx should be compared to truth at idx+1)
+        distances = distance(pred_state[:-1], pred_bodies[:-1], true_states[1:], true_nbodies[1:])
 
         loss = distances
 
@@ -244,7 +248,7 @@ def train(params: VineParams, truth_states, optimizer, writer):
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 3e-5, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 5e-5, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -301,15 +305,15 @@ def train(params: VineParams, truth_states, optimizer, writer):
             )
         
         # Visualize the ground truth at idx (frame before)
-        draw_batched(
-            params,
-            true_states[None, idx_to_view].detach(),
-            true_nbodies[None, idx_to_view].detach(),
-            clear = False,
-            obstacles = False,
-            c = 'g',
-            alpha = 0.5
-            )
+        # draw_batched(
+        #     params,
+        #     true_states[None, idx_to_view].detach(),
+        #     true_nbodies[None, idx_to_view].detach(),
+        #     clear = False,
+        #     obstacles = False,
+        #     c = 'g',
+        #     alpha = 0.5
+        #     )
 
         plt.xlim([-0.1, 1])
         plt.ylim([-1, 0.1])
@@ -405,6 +409,9 @@ if __name__ == '__main__':
 
     # Set up optimizer
     optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
+    
+    # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
+    # so we'll stick with it for now
     optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-5, betas = (0.9, 0.999), weight_decay = 0)
 
     # Set up tensorboard
