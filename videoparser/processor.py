@@ -161,7 +161,7 @@ def collection(folder):
     walls = np.load(os.path.join(folder, 'walls.npy'))
     data = []
     #min_frame = 
-    max_frame = 570
+    max_frame = 660
     past_length = 0
     for entry in os.listdir(folder):
     # Construct full file path
@@ -194,7 +194,7 @@ def collection(folder):
 
 
 def main():
-    folder = './data/frames/vid6/'
+    folder = './data/frames/vid5/'
     collection(folder)
     img_path = './data/frames/vid3/frame_0477.jpg'
     wall_path = './data/frames/vid3/walls.npy'
