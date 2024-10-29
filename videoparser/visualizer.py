@@ -72,6 +72,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
         return
 
     walls = np.load(treated_images_folder + 'walls.npy')
+    #walls = np.load('./data/frames/vid0/walls.npy')
     # Frame index initialization
     frame_index = 0
     treated_frame_interval = 3
@@ -84,7 +85,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
             break  # End of video
 
         # if video is flipped, uncomment this
-        #frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
         # Load new treated image if it's the correct frame, and update last_treated_image
         if frame_index >= first_treated_frame and (frame_index - first_treated_frame) % treated_frame_interval == 0:
             image_path = os.path.join(treated_images_folder, f'frame_{frame_index:04d}.jpg')
@@ -126,7 +127,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
     cv2.destroyAllWindows()
 
 # Usage
-video_path = './data/videos/vid2.mp4'
-treated_images_folder = './data/frames/vid2/'
+video_path = './data/videos/vid4.mp4'
+treated_images_folder = './data/frames/vid4/'
 #play_video_with_treated_frames(video_path, treated_images_folder, './data/frames/vid3/')
 play_video_with_treated_frames(video_path, treated_images_folder)

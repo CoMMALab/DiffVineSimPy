@@ -332,7 +332,7 @@ def extract_frames(video_path, output_folder, outfold=None):
             else:
                 frame = pixdiffref(reference_frame, frame)
                 #frame = pixwhite(reference_frame, frame)
-                frame = cv2.medianBlur(frame, 7)
+                frame = cv2.medianBlur(frame, 11)
                 kernel = np.ones((11, 11), np.uint8)
                 _, binary = cv2.threshold(frame, 127, 255, cv2.THRESH_BINARY)
                 closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
@@ -365,9 +365,9 @@ def extract_frames(video_path, output_folder, outfold=None):
 
 # Usage
 def main():
-    video_path = './data/videos/vid1.mp4'
-    output_folder1 = './data/frames/vid1'
-    output_folder2 = './data/frames/vid5'
+    video_path = './data/videos/vid4.mp4'
+    output_folder1 = './data/frames/vid4'
+    output_folder2 = './data/frames/vid01'
     #extract_frames(video_path, output_folder1, output_folder2)
     extract_frames(video_path, output_folder1)
 
