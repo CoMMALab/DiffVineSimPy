@@ -27,13 +27,13 @@ if __name__ == '__main__':
 
     max_bodies = 40
     init_bodies = 2
-    batch_size = 10
+    batch_size = 8
     
     # Control the initial heading of each vine in the batch
     init_headings = torch.full((batch_size, 1), math.radians(-20))
     
     # Add some noise to the initial headings
-    init_headings += torch.randn_like(init_headings) * math.radians(0)
+    init_headings += torch.randn_like(init_headings) * math.radians(20)
     
     
     

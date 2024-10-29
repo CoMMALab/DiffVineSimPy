@@ -143,7 +143,7 @@ def find_points(img, walls, n):
     if start is None:
         return []
     end, line, dist = travel(img, start)
-    #return line
+    return line
     split = dist/(n-1) # n-1 segments given n points including endpoints
     midpoints = find_midpoints(line, split, n-2)
     img = (img * 255).astype(np.uint8)
