@@ -158,10 +158,10 @@ def find_points(img, walls, n):
     return midpoints
     
 def collection(folder):
-    walls = np.load(os.path.join(folder, 'walls.npy'))
+    wall_og = np.load(os.path.join(folder, 'walls.npy'))
     data = []
     #min_frame = 
-    max_frame = 660
+    max_frame = 580
     past_length = 0
     for entry in os.listdir(folder):
     # Construct full file path
@@ -176,6 +176,7 @@ def collection(folder):
         full_path = os.path.join(folder, entry)
         if os.path.isfile(full_path):
             img = cv2.imread(full_path)
+            walls = copy.deepcopy(wall_og)
             line = find_points(img, walls, 10)
             _, line = transform_vine_base(walls, line)
             if len(line) > 0:
@@ -194,7 +195,7 @@ def collection(folder):
 
 
 def main():
-    folder = './data/frames/vid5/'
+    folder = './data/frames/vid6/'
     collection(folder)
     img_path = './data/frames/vid3/frame_0477.jpg'
     wall_path = './data/frames/vid3/walls.npy'

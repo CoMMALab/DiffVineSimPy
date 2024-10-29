@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     max_bodies = 40
     init_bodies = 2
-    batch_size = 8
+    batch_size = 1
     
     # Control the initial heading of each vine in the batch
     init_headings = torch.full((batch_size, 1), math.radians(-20))

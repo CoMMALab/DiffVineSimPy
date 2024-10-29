@@ -322,10 +322,10 @@ def extract_frames(video_path, output_folder, outfold=None):
             break  # Break the loop if there are no frames left
 
         # if video is flipped, uncomment this
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        #frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         if mod:
-            frame, _ = four_point_transform(frame, bound)
+            frame5, _ = four_point_transform(frame, bound)
             if ref:
                 ref = False
                 reference_frame = frame
@@ -352,7 +352,7 @@ def extract_frames(video_path, output_folder, outfold=None):
                 mod = True
             if frame_count > 5*framerate:
                 frame_filename = os.path.join(output_folder, f"frame_{frame_count:04d}.jpg")
-                cv2.imwrite(frame_filename, frame)
+                cv2.imwrite(frame_filename, frame5)
                 if outfold is not None:
                     frame_filename1 = os.path.join(outfold, f"frame_{frame_count:04d}.jpg")
                     cv2.imwrite(frame_filename1, frame1)
@@ -365,8 +365,8 @@ def extract_frames(video_path, output_folder, outfold=None):
 
 # Usage
 def main():
-    video_path = './data/videos/vid4.mp4'
-    output_folder1 = './data/frames/vid4'
+    video_path = './data/videos/vid3.mp4'
+    output_folder1 = './data/frames/viddemo'
     output_folder2 = './data/frames/vid01'
     #extract_frames(video_path, output_folder1, output_folder2)
     extract_frames(video_path, output_folder1)
