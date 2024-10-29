@@ -46,7 +46,7 @@ def draw_one_vine(x, y, theta, params, **kwargs):
 
     # Draw circle colliders
     for x, y in zip(x, y):
-        circle = plt.Circle((x, y), params.radius, color = 'g', fill = False)
+        circle = plt.Circle((x, y), params.radius, color = 'r', fill = False)
         main_ax.add_patch(circle)
 
 

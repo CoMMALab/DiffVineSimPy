@@ -245,14 +245,14 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         # Custom coefficients for grads
         # Determined with sweat and tears
         params.m.grad *= 0.1
-        params.I.grad *= 2
-        params.stiffness.grad *= 1e1
-        params.damping.grad *= 1e4
-        params.grow_rate.grad *= 3e3 # bump 3x
+        params.I.grad *= 2e2
+        params.stiffness.grad *= 1
+        params.damping.grad *= 1e6
+        params.grow_rate.grad *= 3e4
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-3, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -307,17 +307,6 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
             obstacles = False,
             c = 'b'
             )
-        
-        # Visualize the ground truth at idx (frame before)
-        # draw_batched(
-        #     params,
-        #     true_states[None, idx_to_view].detach(),
-        #     true_nbodies[None, idx_to_view].detach(),
-        #     clear = False,
-        #     obstacles = False,
-        #     c = 'g',
-        #     alpha = 0.5
-        #     )
 
         plt.xlim([-0.1, 1])
         plt.ylim([-1, 0.1])
@@ -414,6 +403,21 @@ if __name__ == '__main__':
     params.stiffness.requires_grad_()
     params.damping.requires_grad_()
     params.grow_rate.requires_grad_()
+    
+    # Declare a 2-layer MLP for stiffness
+    # Takes 1 scalat input and outputs 1 scalar output
+    params.stiffness_func = torch.nn.Sequential(
+        torch.nn.Linear(1, 10),
+        torch.nn.Tanh(),
+        torch.nn.Linear(10, 1)
+        )
+        
+    # Initialize the weights with xavier normal
+    for layer in params.stiffness_func:
+        if isinstance(layer, torch.nn.Linear):
+            torch.nn.init.xavier_normal_(layer.weight)
+            torch.nn.init.zeros_(layer.bias)    
+        
 
     # Set up optimizer
     optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
