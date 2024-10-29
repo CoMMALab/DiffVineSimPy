@@ -126,7 +126,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
     cv2.destroyAllWindows()
 
 # Usage
-video_path = './data/videos/vid3.mp4'
-treated_images_folder = './data/frames/vid3/'
+video_path = './data/videos/vid1.mp4'
+treated_images_folder = './data/frames/vid1/'
 #play_video_with_treated_frames(video_path, treated_images_folder, './data/frames/vid3/')
 play_video_with_treated_frames(video_path, treated_images_folder)

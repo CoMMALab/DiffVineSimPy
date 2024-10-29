@@ -6,6 +6,7 @@ cv2
 sci-kit learn
 scipy
 
+NOTE: all file paths hard coded for testing purposes are relative to the videoparser directory (i.e. you need to cd into this folder)
 
 # framer.py
 This file takes a video and populates a frames folder with images. Includes code
