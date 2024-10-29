@@ -2,6 +2,31 @@ import cv2
 import numpy as np
 import heapq
 import classifier
+import matplotlib.pyplot as plt
+
+def test_transformation(walls, points):
+    for wall in walls:
+        for point in wall:
+            plt.plot(point[1], -point[0], 'bo')
+    for point in points:
+        plt.plot(point[1], -point[0], 'go')
+    plt.grid(True)
+    plt.show()
+def transform_point(x, R, p):
+    return R.dot(x - p)
+def transform_vine_base(walls, points):
+    p = walls[0][1]
+    v = walls[0][0] - walls[0][1]
+    theta = np.arctan2(v[1], v[0])
+
+    R = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
+    for wall in walls:
+        for point in wall:
+            point = transform_point(point, R, p)
+    for point in points:
+        point = transform_point(point, R, p)
+    return walls, points
+
 
 def find_nearest(binary_array, start):
     rows = len(binary_array)
@@ -133,6 +158,8 @@ def main():
     img = cv2.imread(img_path)
     #print(img.shape)
     points = find_points(img, walls, 10)
-    print(points)
+    #walls, points = transform_vine_base(walls, points)
+    test_transformation(walls, points)
 
-#main()
+if __name__ == '__main__':
+    main()
