@@ -15,7 +15,10 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 
 ipm = 39.3701 / 1000   # inches per mm
 
-
+class MutableInt:
+    def __init__(self, value):
+        self.value = value
+        
 def distance(state, bodies, true_state, true_bodies):
     '''
     Given batched BxS (state) and BxS' (true_state),
@@ -182,7 +185,7 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
     return points_tensor.view(B, -1), bodies
 
 
-def train(params: VineParams, truth_states, optimizer, writer):
+def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
     '''
     Trains one batch with shared params.obstacles 
     Args:
@@ -209,7 +212,8 @@ def train(params: VineParams, truth_states, optimizer, writer):
     print('Begin loop')
     
     # Train loop
-    for iter in range(400):
+    for _ in range(10000000):
+        iter = mutable_iter.value
         # On each loop, we feed the truth state into forward, and get the
         # predicted next state. Then compute loss and backprop
         # Also, for the hidden velocty value, we start from an initial guess of 0,
@@ -240,15 +244,15 @@ def train(params: VineParams, truth_states, optimizer, writer):
         
         # Custom coefficients for grads
         # Determined with sweat and tears
-        params.m.grad *= 1
+        params.m.grad *= 0.1
         params.I.grad *= 2
-        params.stiffness.grad *= 1e8
+        params.stiffness.grad *= 1e1
         params.damping.grad *= 1e4
         params.grow_rate.grad *= 3e3 # bump 3x
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 5e-5, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-3, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -321,6 +325,8 @@ def train(params: VineParams, truth_states, optimizer, writer):
         plt.pause(0.001)
 
         print(f'End of iter {iter}, loss {loss.item()}\n')
+        
+        mutable_iter.value += 1
 
     # Evolve and visualize the state starting from truth_states[0]
     # state_now = init_states[0:1]
@@ -351,7 +357,9 @@ def train(params: VineParams, truth_states, optimizer, writer):
 
 
 if __name__ == '__main__':
-
+    # Good runs
+    # Oct29_00-16-51_Seele
+    
     # Directory containing the CSV files
     directory = './sim_output'     # Replace with your actual directory
 
@@ -393,10 +401,10 @@ if __name__ == '__main__':
 
     # Initial guess values
     params.half_len = 3.0 / ipm / 1000 / 2
-    params.radius = 15.0 / 2 / ipm / 1000 * 0.1
+    params.radius = 15.0 / 2 / ipm / 1000 * 0.05
     params.m = torch.tensor([0.002], dtype = torch.float32)
     params.I = torch.tensor([5], dtype = torch.float32)
-    params.stiffness = torch.tensor([30_000.0], dtype = torch.float32)
+    params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
     params.damping = torch.tensor([10.0], dtype = torch.float32)
     params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
     
@@ -412,12 +420,17 @@ if __name__ == '__main__':
     
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-5, betas = (0.9, 0.999), weight_decay = 0)
-
+    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-3, betas = (0.9, 0.999), weight_decay = 0)
+    # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
+    # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
+    
     # Set up tensorboard
     writer = SummaryWriter()
     
     vis_init()
+    
+    # Step count
+    mutable_iter = MutableInt(0)
 
     # Run training separately for each scene
     # train() only works if all the data share obstacles
@@ -445,7 +458,7 @@ if __name__ == '__main__':
         # Train, using the given params as config and (for optimzied vars)
         # initial guess. Then truth states should be a TxS trajectory over T timesteps
         # and fixed-size states of size S. Make sure dt matches
-        train(params, truth_states, optimizer, writer)
+        train(params, truth_states, optimizer, writer, mutable_iter)
         
     # Close tensorboard writer
     writer.close()

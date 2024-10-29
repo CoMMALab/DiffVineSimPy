@@ -25,6 +25,16 @@ During fitting you can run `tensorboard --logdir=runs` to see tensorboard, but I
 
 ## Notes
 
-For the fitting, the starting legnth is different so that makes it have a constant offset throughout
+For the fitting, the starting legnth is different so that makes it have a constant offset throughout. Actually I have no idea why.
 
-Also 
+Also the magnitude of gradients (and by extension param values) matters a lot
+
+To try: different start guesses
+
+Different LR/clipping params
+
+nonlinear buckling
+
+torch.optim.LBFGS?
+
+Witht he hidden velocity variable: Not as convex as we thought!

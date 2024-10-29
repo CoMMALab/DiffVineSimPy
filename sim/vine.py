@@ -169,7 +169,7 @@ class VineParams:
         self.half_len = 9
 
         # Stiffness and damping coefficients
-        self.stiffness = 15_000.0  # 30_000.0  # Stiffness coefficient (too large is instable!)
+        self.stiffness = 15_000.0 / 1_000_1000  # 30_000.0  # Stiffness coefficient (too large is instable!)
         self.damping = 50.0        # Damping coefficient (too large is instable!)
         self.vel_damping = 0.1     # Damping coefficient for velocity (too large is instable!)
 
@@ -321,8 +321,10 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
-
-    bend = -params.stiffness * theta_rel - params.damping * dtheta_rel
+    
+    # FIXME Stiffness gets a constant so the grads are balanced with the rest of the parameters
+    bend = -1 * 1_000_000 * params.stiffness.abs() * theta_rel - params.damping.abs() * dtheta_rel
+    
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
 
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
