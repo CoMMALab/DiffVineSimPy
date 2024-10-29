@@ -4,29 +4,34 @@ import heapq
 import classifier
 import matplotlib.pyplot as plt
 import os
+import copy
+import re
 
 def test_transformation(walls, points):
     for wall in walls:
-        for point in wall:
-            plt.plot(point[1], -point[0], 'bo')
+        plt.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], marker='o', color='b')
     for point in points:
-        plt.plot(point[1], -point[0], 'go')
+        plt.plot(point[0], point[1], 'go')
     plt.grid(True)
     plt.show()
 def transform_point(x, R, p):
-    return R.dot(x - p)
+    #return x-p
+    return R.dot(x - p) * [1, -1]
 def transform_vine_base(walls, points):
-    p = walls[0][1]
-    v = walls[0][0] - walls[0][1]
+    #walls = np.array(walls)
+    points = np.array(points)
+    p = copy.deepcopy(walls[0][1])
+    v = p - copy.deepcopy(walls[0][0])
     theta = np.arctan2(v[1], v[0])
+    flipped = [[y, x] for x, y in points]
 
     R = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
     for wall in walls:
         for point in wall:
-            point = transform_point(point, R, p)
-    for point in points:
-        point = transform_point(point, R, p)
-    return walls, points
+            point[:] = transform_point(point, R, p)
+    for point in flipped:
+        point[:] = transform_point(point, R, p)
+    return walls, flipped
 
 
 def find_nearest(binary_array, start):
@@ -138,7 +143,7 @@ def find_points(img, walls, n):
     if start is None:
         return []
     end, line, dist = travel(img, start)
-    return line
+    #return line
     split = dist/(n-1) # n-1 segments given n points including endpoints
     midpoints = find_midpoints(line, split, n-2)
     img = (img * 255).astype(np.uint8)
@@ -150,21 +155,33 @@ def find_points(img, walls, n):
     #classifier.display_large(img)
     midpoints.insert(0, start)
     midpoints.append(end)
-    return midpoint
+    return midpoints
     
 def collection(folder):
     walls = np.load(os.path.join(folder, 'walls.npy'))
     data = []
+    #min_frame = 
+    max_frame = 570
+    past_length = 0
     for entry in os.listdir(folder):
     # Construct full file path
-        if entry == 'frame_ref.jpg' or entry == 'walls.npy' or entry == 'points.npy':
+        if entry == 'frame_ref.jpg' or entry == 'walls.npy' or entry == 'points.npy' or entry=='tf_walls.npy':
             continue
+        match = re.search(r'frame_(\d+)\.jpg', entry)
+        if match:
+            # Convert the matched group to an integer
+            frame_number = int(match.group(1))
+            if frame_number > max_frame:
+                continue
         full_path = os.path.join(folder, entry)
         if os.path.isfile(full_path):
             img = cv2.imread(full_path)
             line = find_points(img, walls, 10)
+            _, line = transform_vine_base(walls, line)
             if len(line) > 0:
-                data.append(line)
+                if len(line) > past_length * 0.9:
+                    past_length = len(line)
+                    data.append(line)
     max_len = max(len(sublist) for sublist in data)
 
     # Pad sublists with a specified tuple (e.g., (0, 0)) and convert to array
@@ -172,18 +189,22 @@ def collection(folder):
     [(len(sublist),0)] + sublist + [(0, 0)] * (max_len - len(sublist))
     for sublist in data])
     np.save(os.path.join(folder, 'points.npy'), padded_arrays)
+    tf_walls, _ = transform_vine_base(walls, [])
+    np.save(os.path.join(folder, 'tf_walls.npy'), tf_walls)
 
 
 def main():
-    folder = './data/frames/vid3/'
+    folder = './data/frames/vid6/'
     collection(folder)
     img_path = './data/frames/vid3/frame_0477.jpg'
     wall_path = './data/frames/vid3/walls.npy'
     walls = np.load(wall_path)
     img = cv2.imread(img_path)
     #print(img.shape)
-    points = find_points(img, walls, 10)
+    #points = find_points(img, walls, 10)
+    #print(walls, points)
     #walls, points = transform_vine_base(walls, points)
+    #print(walls, points)
     #test_transformation(walls, points)
 
 if __name__ == '__main__':
