@@ -3,6 +3,7 @@ import numpy as np
 import heapq
 import classifier
 import matplotlib.pyplot as plt
+import os
 
 def test_transformation(walls, points):
     for wall in walls:
@@ -137,6 +138,7 @@ def find_points(img, walls, n):
     if start is None:
         return []
     end, line, dist = travel(img, start)
+    return line
     split = dist/(n-1) # n-1 segments given n points including endpoints
     midpoints = find_midpoints(line, split, n-2)
     img = (img * 255).astype(np.uint8)
@@ -148,10 +150,32 @@ def find_points(img, walls, n):
     #classifier.display_large(img)
     midpoints.insert(0, start)
     midpoints.append(end)
-    return midpoints
+    return midpoint
     
+def collection(folder):
+    walls = np.load(os.path.join(folder, 'walls.npy'))
+    data = []
+    for entry in os.listdir(folder):
+    # Construct full file path
+        if entry == 'frame_ref.jpg' or entry == 'walls.npy' or entry == 'points.npy':
+            continue
+        full_path = os.path.join(folder, entry)
+        if os.path.isfile(full_path):
+            img = cv2.imread(full_path)
+            line = find_points(img, walls, 10)
+            data.append(line)
+    max_len = max(len(sublist) for sublist in data)
+
+    # Pad sublists with a specified tuple (e.g., (0, 0)) and convert to array
+    padded_arrays = np.array([
+    [(len(sublist),0)] + sublist + [(0, 0)] * (max_len - len(sublist))
+    for sublist in data])
+    np.save(os.path.join(folder, 'points.npy'), padded_arrays)
+
+
 def main():
     folder = './data/frames/vid3/'
+    collection(folder)
     img_path = './data/frames/vid3/frame_0477.jpg'
     wall_path = './data/frames/vid3/walls.npy'
     walls = np.load(wall_path)
@@ -159,7 +183,7 @@ def main():
     #print(img.shape)
     points = find_points(img, walls, 10)
     #walls, points = transform_vine_base(walls, points)
-    test_transformation(walls, points)
+    #test_transformation(walls, points)
 
 if __name__ == '__main__':
     main()
