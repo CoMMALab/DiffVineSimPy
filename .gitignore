@@ -1,3 +1,5 @@
 __pycache__/
 sim_output
 .vscode/
+tensorboard/
+runs/

@@ -1,18 +1,17 @@
-from functools import partial
-import math
 import os
-from matplotlib import pyplot as plt
-import numpy as np
+import math
 import torch
-from sim.main import solve
-from sim.render import draw_batched, vis_init
+
 from sim.vine import StateTensor, VineParams, create_state_batched, forward_batched_part, forward, generate_segments_from_rectangles, init_state_batched, zero_out, zero_out_custom
 from sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
-import tqdm
+
+from matplotlib import pyplot as plt
+from sim.render import draw_batched, vis_init
+from torch.utils.tensorboard import SummaryWriter
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 ipm = 39.3701 / 1000   # inches per mm
 
@@ -190,31 +189,40 @@ def train(params: VineParams, truth_states):
     '''
 
     # train_batch_size = truth_states.shape[0] - 1
-    train_batch_size = 10  # FIXME I made the batch smaller for testing
+    train_batch_size = 200     # FIXME I made the batch smaller for testing
 
     # Construct initial state
     init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
     init_x = torch.full((train_batch_size, 1), 0.0)
     init_y = torch.full((train_batch_size, 1), 0.0)
-
+    
+    # Create empty pred_dstate so we can save it across iterations
     _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
+    
+    # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
+    true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
 
-    # Set up training
+    # Set up optimization variables
     params.m.requires_grad_()
     params.I.requires_grad_()
     params.stiffness.requires_grad_()
     params.damping.requires_grad_()
     params.grow_rate.requires_grad_()
-
-    optimizer = torch.optim.SGD(
-        [params.m, params.I, params.stiffness, params.damping, params.grow_rate], lr = 0.0001
+    
+    # Set up optimizer
+    optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
+    optimizer = torch.optim.AdamW(
+        optimizer_params,
+        lr = 1e-5,
+        betas = (0.9, 0.999),
+        weight_decay = 0
         )
 
-    # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
-    true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
-
+    # Set up tensorboard
+    writer = SummaryWriter()
+    
     # Train loop
-    for iter in range(100):
+    for iter in range(200):
         # On each loop, we feed the truth state into forward, and get the
         # predicted next state. Then compute loss and backprop
         # Also, for the hidden velocty value, we start from an initial guess of 0,
@@ -226,7 +234,8 @@ def train(params: VineParams, truth_states):
 
         # HACK: Detach the prior iteration so gradients won't depend on non-existant parts of the computational graph
         pred_dstate = pred_dstate.detach()
-        pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y, true_states, pred_dstate, true_nbodies)
+        pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
+                true_states.clone(), pred_dstate.clone(), true_nbodies)
 
         # Set the predicted velocity as the input to the next timestep
         pred_dstate[:, 1:] = pred_dstate[:, :-1]
@@ -240,15 +249,35 @@ def train(params: VineParams, truth_states):
         loss.backward()
 
         # This should have reasonable grads
-        print('M value', params.m.item(), params.m.grad)
-        print('I value', params.I.item(), params.I.grad)
-        print('stiffness value', params.stiffness.item(), params.stiffness.grad)
+        print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
+        print("-" * 55)
 
-        # See how damping has no grads? That's because dstate isn't part of our loss function. This is a problem for later
-        print('damping value', params.damping.item(), params.damping.grad)
-        # This should have grads, but it doesn't and I don't know why
-        print('grow_rate value', params.grow_rate.item(), params.grow_rate.grad)
+        print(f"{'M':<15}{params.m.item():<20.11f}{params.m.grad.item():<20.11f}")
+        print(f"{'I':<15}{params.I.item():<20.11f}{params.I.grad.item():<20.11f}")
+        print(f"{'Stiffness':<15}{params.stiffness.item():<20.11f}{params.stiffness.grad.item():<20.11f}")
+        print(f"{'Damping':<15}{params.damping.item():<20.11f}{params.damping.grad.item():<20.11f}")
+        print(f"{'Grow Rate':<15}{params.grow_rate.item():<20.11f}{params.grow_rate.grad.item():<20.11f}")
+        
+        # Log loss
+        writer.add_scalar('Loss/train', loss.item(), iter)
 
+        # Log parameters
+        writer.add_scalar('Parameters/M', params.m.item(), iter)
+        writer.add_scalar('Parameters/I', params.I.item(), iter)
+        writer.add_scalar('Parameters/Stiffness', params.stiffness.item(), iter)
+        writer.add_scalar('Parameters/Damping', params.damping.item(), iter)
+        writer.add_scalar('Parameters/Grow_Rate', params.grow_rate.item(), iter)
+
+        # Log gradients
+        writer.add_scalar('Gradients/M_grad', params.m.grad.item(), iter)
+        writer.add_scalar('Gradients/I_grad', params.I.grad.item(), iter)
+        writer.add_scalar('Gradients/Stiffness_grad', params.stiffness.grad.item(), iter)
+        writer.add_scalar('Gradients/Damping_grad', params.damping.grad.item(), iter)
+        writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
+        
+        # Clip gradients, FIXME sometimes this explodes for no reason
+        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm=1e-2, norm_type=2)
+        
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
@@ -261,7 +290,8 @@ def train(params: VineParams, truth_states):
             true_nbodies[None, idx_to_view],
             lims = False,
             clear = True,
-            obstacles = True
+            obstacles = True,
+            col = 'g'
             )
 
         # Uncomment to also visualize the predicted state
@@ -271,7 +301,8 @@ def train(params: VineParams, truth_states):
             pred_bodies[None, idx_to_view].detach(),
             lims = False,
             clear = False,
-            obstacles = False
+            obstacles = False,
+            col = 'b'
             )
 
         plt.xlim([-0.1, 1])
@@ -280,7 +311,10 @@ def train(params: VineParams, truth_states):
         plt.pause(0.001)
 
         print(f'End of iter {iter}, loss {loss.item()}\n')
-
+    
+    # Close tensorboard writer
+    writer.close()
+    
     # Evolve and visualize the state starting from truth_states[0]
     # state_now = init_states[0:1]
     # dstate_now = torch.zeros_like(state_now)

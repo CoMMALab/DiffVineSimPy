@@ -12,7 +12,6 @@ class MatrixSquareRoot(Function):
     """
     @staticmethod
     def forward(ctx, input):
-        print('sqrtm module is in its FORWARD call')
         m = input.detach().cpu().numpy().astype(np.float_)
         sqrtm = torch.from_numpy(scipy.linalg.sqrtm(m).real).to(input)
         ctx.save_for_backward(sqrtm)
@@ -20,7 +19,6 @@ class MatrixSquareRoot(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        print('sqrtm module is in its BACKWARD call (this should only happen once)')
         grad_input = None
         if ctx.needs_input_grad[0]:
             sqrtm, = ctx.saved_tensors
