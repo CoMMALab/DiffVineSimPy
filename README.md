@@ -15,10 +15,13 @@ Make sure you have torch and cvxpylayers in your python environment.
 python -m sim.main
 ```
 
-Or for fitting. There is are some test rollouts sim_results, but for the full dataset of 500 (1.3G) I need to upload that somewhere.
+
+To do fitting, run: (It uses the test rollouts in `sim_results`, but the full dataset of 500 (1.3G) rollouts need to be uploaded somewhere)
 ```bash
 python -m sim.fitting
 ```
+
+During fitting you can run `tensorboard --logdir=runs` to see tensorboard, but I recommend using the vscode integration, the button above `import tensorboard` opens it as a tab in vscode
 
 ## TODO
 

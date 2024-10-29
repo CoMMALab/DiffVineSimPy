@@ -388,7 +388,8 @@ def extend(params: VineParams, state, dstate, bodies):
 
     zero_out(state.tensor, bodies)
     zero_out(dstate.tensor, bodies)
-
+    
+    # FIXME return copies, don't mutate
     return bodies
 
 
@@ -425,6 +426,7 @@ def forward_batched_part(params: VineParams, init_heading, init_x, init_y, state
     This function is separated from the QP solving stuff in forward() because it later
     gets compiled into a batched function using vmap, but we can't also compile the QP stuff
     '''
+    
     bodies = extend(params, state, dstate, bodies)
 
     # Jacobian of SDF with respect to x and y
@@ -481,7 +483,7 @@ def solve(
     # Convert the values to a shape that qpth can understand
     N = params.max_bodies * 3
     dt = params.dt
-    M = create_M(params.m, params.I, params.max_bodies)
+    M = create_M(params.m.abs(), params.I.abs(), params.max_bodies)
 
     # Compute c
     p = forces * dt - torch.matmul(dstate, M)
