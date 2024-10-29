@@ -151,27 +151,60 @@ class StateTensor:
         return self.tensor[..., 2::3]
 
 
+class AbsLayer(torch.nn.Module):
+
+    def forward(self, x):
+        return torch.abs(x)
+
+
 class VineParams:
     '''
     Time indepedent parameters.
     TODO make tensors and differentiable
     '''
 
-    def __init__(self, max_bodies, obstacles = [], grow_rate = 10.0):
+    def __init__(
+            self,
+            max_bodies,
+            obstacles = [],
+            grow_rate = 10.0,
+            stiffness_mode = 'linear',
+            stiffness_val = None
+        ):
         self.max_bodies = max_bodies
         self.dt = 1 / 90               # 1/90  # Time step
         self.radius = 25.0 / 2         # Uncompressed collision radius of each body
-        self.grow_rate = grow_rate     # Length grown per unit time
+        self.grow_rate = torch.tensor(grow_rate)     # Length grown per unit time
 
         # Robot parameters
-        self.m = 0.01  # 0.002  # Mass of each body
-        self.I = 10    # Moment of inertia of each body
-        self.half_len = 9
+        self.m = torch.tensor([0.01])  # 0.002  # Mass of each body
+        self.I = torch.tensor([10])    # Moment of inertia of each body
+        self.half_len = torch.tensor(9)
 
         # Stiffness and damping coefficients
-        self.stiffness = 15_000.0 / 1_000_1000  # 30_000.0  # Stiffness coefficient (too large is instable!)
-        self.damping = 50.0        # Damping coefficient (too large is instable!)
-        self.vel_damping = 0.1     # Damping coefficient for velocity (too large is instable!)
+        self.damping = torch.tensor(50.0)        # Damping coefficient (too large is instable!)
+        self.vel_damping = torch.tensor(0.1)     # Damping coefficient for velocity (too large is instable!)
+
+        if stiffness_val is None:
+            stiffness_val = torch.tensor(30_000.0 / 1_000_000.0)
+        self.stiffness_mode = stiffness_mode
+        self.stiffness_val = stiffness_val
+
+        # Init stiffness function
+        if self.stiffness_mode == 'linear':
+            self.stiffness_func = lambda theta_rel: self.stiffness_val.abs() * theta_rel
+        else:
+            # Declare a 2-layer MLP for stiffness
+            # Takes 1 scalar input and outputs 1 scalar output
+            self.stiffness_func = torch.nn.Sequential(
+                torch.nn.Linear(1, 10), torch.nn.Tanh(), torch.nn.Linear(10, 1).AbsLayer()
+                )
+
+            # Initialize the weights with xavier normal
+            for layer in self.stiffness_func:
+                if isinstance(layer, torch.nn.Linear):
+                    torch.nn.init.xavier_normal_(layer.weight)
+                    torch.nn.init.zeros_(layer.bias)
 
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
@@ -188,6 +221,21 @@ class VineParams:
         # Make a tensor containing a flattened list of segments of shape  4NxN
         self.obstacles = torch.tensor(self.obstacles)
         self.segments = generate_segments_from_rectangles(self.obstacles)
+
+    def opt_params(self):
+        if self.stiffness_mode == 'linear':
+            self.m.requires_grad_()
+            self.I.requires_grad_()
+            self.damping.requires_grad_()
+            self.grow_rate.requires_grad_()
+            self.stiffness_val.requires_grad_()
+            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val]
+        else:
+            self.m.requires_grad_()
+            self.I.requires_grad_()
+            self.damping.requires_grad_()
+            self.grow_rate.requires_grad_()
+            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_func.parameters()]
 
 
 def create_M(m, I, max_bodies):
@@ -321,18 +369,17 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
-    
+
     # FIXME Stiffness gets a constant so the grads are balanced with the rest of the parameters
     # bend = -1 * 1_000_000 * params.stiffness.abs() * theta_rel - params.damping.abs() * dtheta_rel
-    
+
     # buckling bending
     # FIXME Comment out to switch bending modes
-    
-    print('input theta_rel', theta_rel.shape, theta_rel.unsqueeze(-1).shape)
-    print('output', params.stiffness_func(theta_rel.unsqueeze(-1)).shape)
-    bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
-    
-    
+
+    # bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
+    bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)
+                                                  ).squeeze() - params.damping.abs() * dtheta_rel
+
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
 
@@ -397,7 +444,7 @@ def extend(params: VineParams, state, dstate, bodies):
 
     zero_out(state.tensor, bodies)
     zero_out(dstate.tensor, bodies)
-    
+
     # FIXME return copies, don't mutate
     return bodies
 
@@ -435,7 +482,7 @@ def forward_batched_part(params: VineParams, init_heading, init_x, init_y, state
     This function is separated from the QP solving stuff in forward() because it later
     gets compiled into a batched function using vmap, but we can't also compile the QP stuff
     '''
-    
+
     bodies = extend(params, state, dstate, bodies)
 
     # Jacobian of SDF with respect to x and y

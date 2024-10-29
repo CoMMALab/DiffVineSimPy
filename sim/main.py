@@ -27,10 +27,16 @@ if __name__ == '__main__':
 
     max_bodies = 40
     init_bodies = 2
-    batch_size = 1
-
+    batch_size = 10
+    
+    # Control the initial heading of each vine in the batch
     init_headings = torch.full((batch_size, 1), math.radians(-20))
+    
+    # Add some noise to the initial headings
     init_headings += torch.randn_like(init_headings) * math.radians(0)
+    
+    
+    
     init_x = torch.full((batch_size, 1), 0.0)
     init_y = torch.full((batch_size, 1), 0.0)
 
@@ -38,11 +44,15 @@ if __name__ == '__main__':
         max_bodies,
         obstacles = obstacles,
         grow_rate = 150,
+        stiffness_mode='linear',
+        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32) 
         )
-
+    
+    # Create empty state arrays with the right shape
     state, dstate = create_state_batched(batch_size, max_bodies)
     bodies = torch.full((batch_size, 1), fill_value = init_bodies)
-
+    
+    # Fill the state arrays using init_headings
     init_state_batched(params, state, bodies, init_headings)
 
     vis_init()
@@ -54,10 +64,6 @@ if __name__ == '__main__':
     # Measure time per frame
     total_time = 0
     total_frames = 0
-
-    # Init optimization targets
-    params.m = torch.tensor([params.m], dtype = torch.float32, requires_grad = True)
-    params.I = torch.tensor([params.I], dtype = torch.float32, requires_grad = True)
 
     for frame in range(1000):
         start = time.time()
@@ -79,7 +85,7 @@ if __name__ == '__main__':
             print('Time per frame: ', total_time / total_frames)
 
         if frame % 2 == 0:
-            draw_batched(params, state, bodies)
+            draw_batched(params, state, bodies, c='blue')
             plt.pause(0.001)
 
         if torch.any(bodies >= params.max_bodies):

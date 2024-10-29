@@ -296,13 +296,12 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         params.m.grad *= 0.01
         params.I.grad *= 2e6
         params.damping.grad *= 1e6
-        if params.stiffness.requires_grad:
-            params.stiffness.grad *= 1
-        
+        if params.stiffness_mode == 'linear':
+            params.stiffness_val.grad *= 0.1
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-2, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -312,8 +311,9 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         print(f"{'M':<15}{params.m.item():<20.11f}{params.m.grad.item():<20.11f}")
         print(f"{'I':<15}{params.I.item():<20.11f}{params.I.grad.item():<20.11f}")
         print(f"{'Damping':<15}{params.damping.item():<20.11f}{params.damping.grad.item():<20.11f}")
-        if params.stiffness.requires_grad:
-            print(f"{'Stiffness':<15}{params.stiffness.item():<20.11f}{params.stiffness.grad.item():<20.11f}")
+        
+        if params.stiffness_mode == 'linear':
+            print(f"{'Stiffness':<15}{params.stiffness_val.item():<20.11f}{params.stiffness_val.grad.item():<20.11f}")
 
         # Log loss
         writer.add_scalar('Loss/train', loss.item(), iter)
@@ -323,16 +323,16 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         writer.add_scalar('Parameters/M', params.m.item(), iter)
         writer.add_scalar('Parameters/I', params.I.item(), iter)
         writer.add_scalar('Parameters/Damping', params.damping.item(), iter)
-        if params.stiffness.requires_grad:
-            writer.add_scalar('Parameters/Stiffness', params.stiffness.item(), iter)
+        if params.stiffness_mode == 'linear':
+            writer.add_scalar('Parameters/Stiffness', params.stiffness_val.item(), iter)
 
         # Log gradients
         writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
         writer.add_scalar('Gradients/M_grad', params.m.grad.item(), iter)
         writer.add_scalar('Gradients/I_grad', params.I.grad.item(), iter)
         writer.add_scalar('Gradients/Damping_grad', params.damping.grad.item(), iter)
-        if params.stiffness.requires_grad:
-            writer.add_scalar('Gradients/Stiffness_grad', params.stiffness.grad.item(), iter)
+        if params.stiffness_mode == 'linear':
+            writer.add_scalar('Gradients/Stiffness_grad', params.stiffness_val.grad.item(), iter)
         
         # Call the helper function to log stiffness_func details
         log_stiffness_func(writer, params.stiffness_func, iter)
@@ -400,8 +400,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
 
 
 if __name__ == '__main__':
-    # Good runs
-    # Oct29_00-16-51_Seele
+
     
     # Directory containing the CSV files
     directory = './sim_output'     # Replace with your actual directory
@@ -440,6 +439,8 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
+        stiffness_mode = 'nonlinear',
+        stiffness_val = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32) 
         )
 
     # Initial guess values
@@ -455,39 +456,14 @@ if __name__ == '__main__':
     params.radius = 15.0 / 2 / ipm / 1000 * 0.05
     params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
     params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
     params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
     
     # Note to tuners setting this low cheats the loss function 
     params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
     
-    # Declare optimization variables
-    params.m.requires_grad_()
-    params.I.requires_grad_()
-    # params.stiffness.requires_grad_()
-    params.damping.requires_grad_()
-    params.grow_rate.requires_grad_()
-    
-    # Declare a 2-layer MLP for stiffness
-    # Takes 1 scalat input and outputs 1 scalar output
-    params.stiffness_func = torch.nn.Sequential(
-        torch.nn.Linear(1, 10),
-        torch.nn.Tanh(),
-        torch.nn.Linear(10, 1)
-        )
-        
-    # Initialize the weights with xavier normal
-    for layer in params.stiffness_func:
-        if isinstance(layer, torch.nn.Linear):
-            torch.nn.init.xavier_normal_(layer.weight)
-            torch.nn.init.zeros_(layer.bias)    
-        
-    # Set up optimizer
-    optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
-    
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
+    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
     # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
     # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
     

@@ -15,10 +15,13 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 
 ipm = 39.3701 / 1000   # inches per mm
 
+
 class MutableInt:
+
     def __init__(self, value):
         self.value = value
-        
+
+
 def distance(state, bodies, true_state, true_bodies):
     '''
     Given batched BxS (state) and BxS' (true_state),
@@ -173,10 +176,7 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
             next_y = state[b, i * 3 + 1].item()
             points_tensor[b, total_bodies, 0] = next_x
             points_tensor[b, total_bodies, 1] = next_y
-            points_tensor[b, total_bodies, 2] = math.atan2(
-                next_y - last_y,
-                next_x - last_x
-                )
+            points_tensor[b, total_bodies, 2] = math.atan2(next_y - last_y, next_x - last_x)
 
             total_bodies += 1
 
@@ -194,23 +194,23 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
     '''
 
     # train_batch_size = truth_states.shape[0] - 1
-    train_batch_size = 50     # FIXME I made the batch smaller for testing
+    train_batch_size = 200  # FIXME I made the batch smaller for testing
 
     # Construct initial state
     init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
     init_x = torch.full((train_batch_size, 1), 0.0)
     init_y = torch.full((train_batch_size, 1), 0.0)
-    
+
     # Create empty pred_dstate so we can save it across iterations
     _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
-    
+
     print('Converting raw data')
-    
+
     # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
     true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
 
     print('Begin loop')
-    
+
     # Train loop
     for _ in range(10000000):
         iter = mutable_iter.value
@@ -227,7 +227,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         pred_dstate = pred_dstate.detach().clone()
         true_states = true_states.detach().clone()
         true_nbodies = true_nbodies.detach().clone()
-        
+
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
                 true_states, pred_dstate, true_nbodies)
 
@@ -241,47 +241,51 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         loss = distances
 
         loss.backward()
-        
+
         # Custom coefficients for grads
         # Determined with sweat and tears
+        params.grow_rate.grad *= 3e4
         params.m.grad *= 0.01
         params.I.grad *= 2e6
         params.damping.grad *= 1e6
-        params.stiffness.grad *= 1
-        params.grow_rate.grad *= 3e4
-        
+        if params.stiffness_mode == 'linear':
+            params.stiffness_val.grad *= 0.1
+
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-2, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
         print("-" * 55)
 
+        print(f"{'Grow Rate':<15}{params.grow_rate.item():<20.11f}{params.grow_rate.grad.item():<20.11f}")
         print(f"{'M':<15}{params.m.item():<20.11f}{params.m.grad.item():<20.11f}")
         print(f"{'I':<15}{params.I.item():<20.11f}{params.I.grad.item():<20.11f}")
-        print(f"{'Stiffness':<15}{params.stiffness.item():<20.11f}{params.stiffness.grad.item():<20.11f}")
         print(f"{'Damping':<15}{params.damping.item():<20.11f}{params.damping.grad.item():<20.11f}")
-
-        # FIXME This has no grads, I think i know why but wontfix for now
-        print(f"{'Grow Rate':<15}{params.grow_rate.item():<20.11f}{params.grow_rate.grad.item():<20.11f}")
+        if params.stiffness_mode == 'linear':
+            print(
+                f"{'Stiffness':<15}{params.stiffness_val.item():<20.11f}{params.stiffness_val.grad.item():<20.11f}"
+                )
 
         # Log loss
         writer.add_scalar('Loss/train', loss.item(), iter)
 
         # Log parameters
+        writer.add_scalar('Parameters/Grow_Rate', params.grow_rate.item(), iter)
         writer.add_scalar('Parameters/M', params.m.item(), iter)
         writer.add_scalar('Parameters/I', params.I.item(), iter)
-        writer.add_scalar('Parameters/Stiffness', params.stiffness.item(), iter)
         writer.add_scalar('Parameters/Damping', params.damping.item(), iter)
-        writer.add_scalar('Parameters/Grow_Rate', params.grow_rate.item(), iter)
+        if params.stiffness_mode == 'linear':
+            writer.add_scalar('Parameters/Stiffness', params.stiffness_val.item(), iter)
 
         # Log gradients
+        writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
         writer.add_scalar('Gradients/M_grad', params.m.grad.item(), iter)
         writer.add_scalar('Gradients/I_grad', params.I.grad.item(), iter)
-        writer.add_scalar('Gradients/Stiffness_grad', params.stiffness.grad.item(), iter)
         writer.add_scalar('Gradients/Damping_grad', params.damping.grad.item(), iter)
-        writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
+        if params.stiffness_mode == 'linear':
+            writer.add_scalar('Gradients/Stiffness_grad', params.stiffness_val.grad.item(), iter)
 
         optimizer.step()
 
@@ -314,7 +318,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         plt.pause(0.001)
 
         print(f'End of iter {iter}, loss {loss.item()}\n')
-        
+
         mutable_iter.value += 1
 
     # Evolve and visualize the state starting from truth_states[0]
@@ -349,7 +353,7 @@ if __name__ == '__main__':
     # Good runs
     # Oct29_00-16-51_Seele
     # Oct29_01-54-14_Seele
-    
+
     # Directory containing the CSV files
     directory = './sim_output'     # Replace with your actual directory
 
@@ -387,62 +391,41 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
+        stiffness_mode = 'linear',
+        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
         )
 
     # Initial guess values
-    # params.half_len = 3.0 / ipm / 1000 / 2
-    # params.radius = 15.0 / 2 / ipm / 1000 * 0.05
-    # params.m = torch.tensor([0.002], dtype = torch.float32)
-    # params.I = torch.tensor([5], dtype = torch.float32)
-    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    # params.damping = torch.tensor([10.0], dtype = torch.float32)
-    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
-    
     params.half_len = 3.0 / ipm / 1000 / 2
     params.radius = 15.0 / 2 / ipm / 1000 * 0.05
-    params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
-    params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
-    
-    # Note to tuners setting this low cheats the loss function 
-    params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
-    
-    # Declare optimization variables
-    params.m.requires_grad_()
-    params.I.requires_grad_()
-    params.stiffness.requires_grad_()
-    params.damping.requires_grad_()
-    params.grow_rate.requires_grad_()
-    
-    # Declare a 2-layer MLP for stiffness
-    # Takes 1 scalat input and outputs 1 scalar output
-    params.stiffness_func = torch.nn.Sequential(
-        torch.nn.Linear(1, 10),
-        torch.nn.Tanh(),
-        torch.nn.Linear(10, 1)
-        )
-        
-    # Initialize the weights with xavier normal
-    for layer in params.stiffness_func:
-        if isinstance(layer, torch.nn.Linear):
-            torch.nn.init.xavier_normal_(layer.weight)
-            torch.nn.init.zeros_(layer.bias)    
-        
-    # Set up optimizer
-    optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
-    
+    params.m = torch.tensor([0.002])
+    params.I = torch.tensor([5.0])
+    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    params.damping = torch.tensor(10.0)
+    params.grow_rate = torch.tensor(100.0 / ipm / 1000)
+
+    # Second guesses
+    # params.half_len = 3.0 / ipm / 1000 / 2
+    # params.radius = 15.0 / 2 / ipm / 1000 * 0.05
+    # params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
+    # params.I = 2 * torch.tensor([5], dtype = torch.float32)
+    # params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+
+    # # Note to tuners setting this low cheats the loss function
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
+    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
     # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
     # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
-    
+
     # Set up tensorboard
     writer = SummaryWriter()
-    
+
     vis_init()
-    
+
     # Step count
     mutable_iter = MutableInt(0)
 
@@ -455,24 +438,24 @@ if __name__ == '__main__':
         # Load vine robot data from CSV
         # RECTS ARE xywh HERE
         state, scene = load_vine_robot_csv(filepath)
-           
+
         # Extract the scene
         for i in range(len(scene)):
             # Convert xywh to xyxy
             scene[i] = list(scene[i])
             scene[i][2] = scene[i][0] + scene[i][2]
             scene[i][3] = scene[i][1] + scene[i][3]
-                    
+
         # Convert the obstacles to segments in a form we can use later
         params.obstacles = torch.tensor(scene)
         params.segments = generate_segments_from_rectangles(params.obstacles)
 
         truth_states = torch.from_numpy(state)
-        
+
         # Train, using the given params as config and (for optimzied vars)
         # initial guess. Then truth states should be a TxS trajectory over T timesteps
         # and fixed-size states of size S. Make sure dt matches
         train(params, truth_states, optimizer, writer, mutable_iter)
-        
+
     # Close tensorboard writer
     writer.close()
