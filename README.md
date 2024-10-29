@@ -11,10 +11,10 @@ Make sure you have torch and cvxpylayers in your python environment.
 
 ## Run
 
+To see the simulation rollout with some default params and scene, run this. It's mainly for debugging changes in the sim itself
 ```bash
 python -m sim.main
 ```
-
 
 To do fitting, run: (It uses the test rollouts in `sim_results`, but the full dataset of 500 (1.3G) rollouts need to be uploaded somewhere)
 ```bash

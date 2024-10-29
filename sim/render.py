@@ -25,7 +25,7 @@ def vis_init():
     # fig_ax = plt.gca()
 
 
-def draw_one_vine(x, y, theta, params, col='b'):
+def draw_one_vine(x, y, theta, params, **kwargs):
     # Draw each body
     for i in range(x.shape[-1] - 1):
         # Body endpoints
@@ -34,7 +34,7 @@ def draw_one_vine(x, y, theta, params, col='b'):
         x_end = x[i] + params.half_len * torch.cos(theta[i])
         y_end = y[i] + params.half_len * torch.sin(theta[i])
 
-        main_ax.plot([x_start, x_end], [y_start, y_end], c = col, linewidth = 5)
+        main_ax.plot([x_start, x_end], [y_start, y_end], linewidth = 5, **kwargs)
         # main_ax.scatter(state.x[i], state.y[i], c='pink', s=radius2pt(vine.radius))
 
     # Draw last body
@@ -42,7 +42,7 @@ def draw_one_vine(x, y, theta, params, col='b'):
     y_start = y[-2] + params.half_len * torch.sin(theta[-2])
     x_end = x[-1]
     y_end = y[-1]
-    main_ax.plot([x_start, x_end], [y_start, y_end], c = col, linewidth = 5)
+    main_ax.plot([x_start, x_end], [y_start, y_end], linewidth = 5, **kwargs)
 
     # Draw circle colliders
     for x, y in zip(x, y):
@@ -50,7 +50,7 @@ def draw_one_vine(x, y, theta, params, col='b'):
         main_ax.add_patch(circle)
 
 
-def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obstacles=True, **kwargs):
+def draw_batched(params: VineParams, state, bodies, lims=False, clear=True, obstacles=True, **kwargs):
     global main_ax, fig_ax
     
     if clear:
@@ -78,7 +78,7 @@ def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obsta
     for i in range(state.shape[0]):
         state_item = StateTensor(state[i])
         leng = bodies[i]
-        
+                
         draw_one_vine(state_item.x[:leng], state_item.y[:leng], state_item.theta[:leng], params, **kwargs)
 
     # if hasattr(params, 'dbg_dist'):

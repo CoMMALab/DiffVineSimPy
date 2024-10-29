@@ -180,7 +180,7 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
     return points_tensor.view(B, -1), bodies
 
 
-def train(params: VineParams, truth_states):
+def train(params: VineParams, truth_states, optimizer, writer):
     '''
     Trains one batch with shared params.obstacles 
     Args:
@@ -195,29 +195,19 @@ def train(params: VineParams, truth_states):
     init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
     init_x = torch.full((train_batch_size, 1), 0.0)
     init_y = torch.full((train_batch_size, 1), 0.0)
-
+    
     # Create empty pred_dstate so we can save it across iterations
     _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
-
+    
+    print('Converting raw data')
+    
     # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
     true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
 
-    # Set up optimization variables
-    params.m.requires_grad_()
-    params.I.requires_grad_()
-    params.stiffness.requires_grad_()
-    params.damping.requires_grad_()
-    params.grow_rate.requires_grad_()
-
-    # Set up optimizer
-    optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
-    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-5, betas = (0.9, 0.999), weight_decay = 0)
-
-    # Set up tensorboard
-    writer = SummaryWriter()
-
+    print('Begin loop')
+    
     # Train loop
-    for iter in range(200):
+    for iter in range(400):
         # On each loop, we feed the truth state into forward, and get the
         # predicted next state. Then compute loss and backprop
         # Also, for the hidden velocty value, we start from an initial guess of 0,
@@ -245,14 +235,16 @@ def train(params: VineParams, truth_states):
         loss.backward()
         
         # Custom coefficients for grads
+        # Determined with sweat and tears
         params.m.grad *= 1
         params.I.grad *= 2
-        params.stiffness.grad *= 1e6
+        params.stiffness.grad *= 1e8
         params.damping.grad *= 1e4
-        params.grow_rate.grad *= 1e3
+        params.grow_rate.grad *= 3e3 # bump 3x
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
-        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 1e-4, norm_type = 2)
+        # Set a bit conservative, so worst case it takes a bit longer but won't explode
+        torch.nn.utils.clip_grad_norm_(optimizer_params, max_norm = 3e-5, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -286,38 +278,36 @@ def train(params: VineParams, truth_states):
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
-        idx_to_view = iter % train_batch_size
+        idx_to_view = (iter * 9) % (train_batch_size - 1)
 
-        # Visualize the ground truth
+        # Visualize the ground truth at idx+1
         draw_batched(
             params,
-            true_states[None, idx_to_view],
-            true_nbodies[None, idx_to_view],
-            lims = False,
+            true_states[None, idx_to_view + 1],
+            true_nbodies[None, idx_to_view + 1],
             clear = True,
             obstacles = True,
-            col = 'g'
+            c = 'g'
             )
 
-        # Uncomment to also visualize the predicted state
+        # Visualize the predicted state _from_ idx, essentially idx + 1
         draw_batched(
             params,
             pred_state[None, idx_to_view].detach(),
             pred_bodies[None, idx_to_view].detach(),
-            lims = False,
             clear = False,
             obstacles = False,
-            col = 'b'
+            c = 'b'
             )
-            
+        
+        # Visualize the ground truth at idx (frame before)
         draw_batched(
             params,
             true_states[None, idx_to_view].detach(),
-            pred_dstate[None, idx_to_view].detach(),
-            lims = False,
+            true_nbodies[None, idx_to_view].detach(),
             clear = False,
             obstacles = False,
-            col = 'r',
+            c = 'g',
             alpha = 0.5
             )
 
@@ -327,9 +317,6 @@ def train(params: VineParams, truth_states):
         plt.pause(0.001)
 
         print(f'End of iter {iter}, loss {loss.item()}\n')
-
-    # Close tensorboard writer
-    writer.close()
 
     # Evolve and visualize the state starting from truth_states[0]
     # state_now = init_states[0:1]
@@ -364,10 +351,7 @@ if __name__ == '__main__':
     # Directory containing the CSV files
     directory = './sim_output'     # Replace with your actual directory
 
-    states = []
-    scenes = []
-
-    num_to_read = 4
+    filenames = []
 
     # Get files sorted in number order
     files = os.listdir(directory)
@@ -377,18 +361,7 @@ if __name__ == '__main__':
     for filename in files_sorted:
         if filename.endswith('.csv'):
             filepath = os.path.join(directory, filename)
-            print(f"Reading file: {filename}")
-
-            # Load vine robot data from CSV
-            # RECTS ARE xywh HERE
-            data, rects = load_vine_robot_csv(filepath)
-
-            states.append(data)
-            scenes.append(rects)
-
-            num_to_read -= 1
-            if num_to_read == 0:
-                break
+            filenames.append(filename)
 
     # init heading = 1.31
     # diam = 24.0
@@ -422,27 +395,50 @@ if __name__ == '__main__':
     params.stiffness = torch.tensor([30_000.0], dtype = torch.float32)
     params.damping = torch.tensor([10.0], dtype = torch.float32)
     params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    
+    # Declare optimization variables
+    params.m.requires_grad_()
+    params.I.requires_grad_()
+    params.stiffness.requires_grad_()
+    params.damping.requires_grad_()
+    params.grow_rate.requires_grad_()
 
+    # Set up optimizer
+    optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
+    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-5, betas = (0.9, 0.999), weight_decay = 0)
+
+    # Set up tensorboard
+    writer = SummaryWriter()
+    
     vis_init()
 
     # Run training separately for each scene
     # train() only works if all the data share obstacles
     # TODO In the future we may rewrite the code to support different obstacles within a batch
-    for state, scene in zip(states, scenes):
+    for filename in filenames:
+        print(f"Loading file: {filename}")
+
+        # Load vine robot data from CSV
+        # RECTS ARE xywh HERE
+        state, scene = load_vine_robot_csv(filepath)
+           
         # Extract the scene
         for i in range(len(scene)):
             # Convert xywh to xyxy
             scene[i] = list(scene[i])
             scene[i][2] = scene[i][0] + scene[i][2]
             scene[i][3] = scene[i][1] + scene[i][3]
-
+                    
         # Convert the obstacles to segments in a form we can use later
         params.obstacles = torch.tensor(scene)
         params.segments = generate_segments_from_rectangles(params.obstacles)
 
         truth_states = torch.from_numpy(state)
-
+        
         # Train, using the given params as config and (for optimzied vars)
         # initial guess. Then truth states should be a TxS trajectory over T timesteps
         # and fixed-size states of size S. Make sure dt matches
-        train(params, truth_states)
+        train(params, truth_states, optimizer, writer)
+        
+    # Close tensorboard writer
+    writer.close()
