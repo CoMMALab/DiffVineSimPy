@@ -323,10 +323,17 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Generally, \tau = - stiffness * benderino - damping * d_benderino
     
     # FIXME Stiffness gets a constant so the grads are balanced with the rest of the parameters
-    bend = -1 * 1_000_000 * params.stiffness.abs() * theta_rel - params.damping.abs() * dtheta_rel
+    # bend = -1 * 1_000_000 * params.stiffness.abs() * theta_rel - params.damping.abs() * dtheta_rel
+    
+    # buckling bending
+    # FIXME Comment out to switch bending modes
+    
+    print('input theta_rel', theta_rel.shape, theta_rel.unsqueeze(-1).shape)
+    print('output', params.stiffness_func(theta_rel.unsqueeze(-1)).shape)
+    bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
+    
     
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
-
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
 
     zero_out_custom(bend, bodies)

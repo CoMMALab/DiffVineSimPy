@@ -3,3 +3,4 @@ sim_output
 .vscode/
 tensorboard/
 runs/
+tmp/

@@ -1,7 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
 
-from sim.fitting import convert_to_valid_state
+from sim.fitting_good import convert_to_valid_state
 
 # Define the convert_to_valid_state function as provided in the previous message
 # Place the entire function definition here

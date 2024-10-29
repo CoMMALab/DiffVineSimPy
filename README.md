@@ -9,6 +9,8 @@ Also uses [sqrtm](https://github.com/steveli/pytorch-sqrtm)
 ## Install
 Make sure you have torch and cvxpylayers in your python environment.
 
+Also get `plotly`. pyplot won't play nice trying to generate a figure invisibly
+
 ## Run
 
 To see the simulation rollout with some default params and scene, run this. It's mainly for debugging changes in the sim itself

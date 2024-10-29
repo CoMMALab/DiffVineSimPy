@@ -1,12 +1,17 @@
 import os
 import math
+import plotly.graph_objects as go
 import torch
+import torchvision.transforms.functional
 
 from sim.vine import StateTensor, VineParams, create_state_batched, forward_batched_part, forward, generate_segments_from_rectangles, init_state_batched, zero_out, zero_out_custom
 from sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
 
 from matplotlib import pyplot as plt
+from PIL import Image
+import torchvision
+import io
 from sim.render import draw_batched, vis_init
 from torch.utils.tensorboard import SummaryWriter
 
@@ -15,6 +20,49 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 
 ipm = 39.3701 / 1000   # inches per mm
 
+stiff_fig, stiff_ax = plt.subplots()
+
+def log_stiffness_func(writer, stiffness_func, iter):
+    """
+    Logs the weights, biases, gradients, and output plot of stiffness_func to TensorBoard.
+
+    Args:
+        writer (SummaryWriter): TensorBoard writer instance.
+        stiffness_func (torch.nn.Module): Stiffness function model.
+        iter (int): Current iteration step for logging.
+    """
+    
+    # Log weights, biases, and gradients for each layer in stiffness_func
+    for i, layer in enumerate(stiffness_func):
+        if isinstance(layer, torch.nn.Linear):
+            # Log weights and biases
+            writer.add_histogram(f'Stiffness_func/layer_{i}_weights', layer.weight, iter)
+            writer.add_histogram(f'Stiffness_func/layer_{i}_biases', layer.bias, iter)
+
+            # Log gradients if they exist
+            if layer.weight.grad is not None:
+                writer.add_histogram(f'Stiffness_func/layer_{i}_weights_grad', layer.weight.grad, iter)
+            if layer.bias.grad is not None:
+                writer.add_histogram(f'Stiffness_func/layer_{i}_biases_grad', layer.bias.grad, iter)
+
+    # Generate output plot for stiffness_func from inputs -1.5 to 1.5
+    inputs = torch.arange(-1.5, 1.6, 0.1).unsqueeze(1)  # Shape [N, 1]
+    with torch.no_grad():
+        outputs = stiffness_func(inputs).squeeze()  # Shape [N]
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=inputs.numpy().flatten(), y=outputs.numpy(), mode='lines', name='Stiffness Output'))
+    fig.update_layout(title="Stiffness Function Output", xaxis_title="Input", yaxis_title="Output")
+
+    #convert a Plotly fig to  a RGBA-array
+    fig_bytes = fig.to_image(format="png")
+    buf = io.BytesIO(fig_bytes)
+    img = torchvision.transforms.functional.pil_to_tensor(Image.open(buf))
+
+    # Log the image to TensorBoard
+    writer.add_image("Stiffness_func/output_plot", img, iter)
+    
 class MutableInt:
     def __init__(self, value):
         self.value = value
@@ -244,11 +292,13 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         
         # Custom coefficients for grads
         # Determined with sweat and tears
+        params.grow_rate.grad *= 3e4
         params.m.grad *= 0.01
         params.I.grad *= 2e6
         params.damping.grad *= 1e6
-        params.stiffness.grad *= 1
-        params.grow_rate.grad *= 3e4
+        if params.stiffness.requires_grad:
+            params.stiffness.grad *= 1
+        
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
@@ -257,32 +307,36 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
         print("-" * 55)
-
+    
+        print(f"{'Grow Rate':<15}{params.grow_rate.item():<20.11f}{params.grow_rate.grad.item():<20.11f}")
         print(f"{'M':<15}{params.m.item():<20.11f}{params.m.grad.item():<20.11f}")
         print(f"{'I':<15}{params.I.item():<20.11f}{params.I.grad.item():<20.11f}")
-        print(f"{'Stiffness':<15}{params.stiffness.item():<20.11f}{params.stiffness.grad.item():<20.11f}")
         print(f"{'Damping':<15}{params.damping.item():<20.11f}{params.damping.grad.item():<20.11f}")
-
-        # FIXME This has no grads, I think i know why but wontfix for now
-        print(f"{'Grow Rate':<15}{params.grow_rate.item():<20.11f}{params.grow_rate.grad.item():<20.11f}")
+        if params.stiffness.requires_grad:
+            print(f"{'Stiffness':<15}{params.stiffness.item():<20.11f}{params.stiffness.grad.item():<20.11f}")
 
         # Log loss
         writer.add_scalar('Loss/train', loss.item(), iter)
 
         # Log parameters
+        writer.add_scalar('Parameters/Grow_Rate', params.grow_rate.item(), iter)
         writer.add_scalar('Parameters/M', params.m.item(), iter)
         writer.add_scalar('Parameters/I', params.I.item(), iter)
-        writer.add_scalar('Parameters/Stiffness', params.stiffness.item(), iter)
         writer.add_scalar('Parameters/Damping', params.damping.item(), iter)
-        writer.add_scalar('Parameters/Grow_Rate', params.grow_rate.item(), iter)
+        if params.stiffness.requires_grad:
+            writer.add_scalar('Parameters/Stiffness', params.stiffness.item(), iter)
 
         # Log gradients
+        writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
         writer.add_scalar('Gradients/M_grad', params.m.grad.item(), iter)
         writer.add_scalar('Gradients/I_grad', params.I.grad.item(), iter)
-        writer.add_scalar('Gradients/Stiffness_grad', params.stiffness.grad.item(), iter)
         writer.add_scalar('Gradients/Damping_grad', params.damping.grad.item(), iter)
-        writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
-
+        if params.stiffness.requires_grad:
+            writer.add_scalar('Gradients/Stiffness_grad', params.stiffness.grad.item(), iter)
+        
+        # Call the helper function to log stiffness_func details
+        log_stiffness_func(writer, params.stiffness_func, iter)
+        
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
@@ -410,7 +464,7 @@ if __name__ == '__main__':
     # Declare optimization variables
     params.m.requires_grad_()
     params.I.requires_grad_()
-    params.stiffness.requires_grad_()
+    # params.stiffness.requires_grad_()
     params.damping.requires_grad_()
     params.grow_rate.requires_grad_()
     
