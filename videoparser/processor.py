@@ -163,7 +163,8 @@ def collection(folder):
         if os.path.isfile(full_path):
             img = cv2.imread(full_path)
             line = find_points(img, walls, 10)
-            data.append(line)
+            if len(line) > 0:
+                data.append(line)
     max_len = max(len(sublist) for sublist in data)
 
     # Pad sublists with a specified tuple (e.g., (0, 0)) and convert to array
