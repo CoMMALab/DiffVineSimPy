@@ -194,7 +194,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
     '''
 
     # train_batch_size = truth_states.shape[0] - 1
-    train_batch_size = 200     # FIXME I made the batch smaller for testing
+    train_batch_size = 50     # FIXME I made the batch smaller for testing
 
     # Construct initial state
     init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
@@ -244,10 +244,10 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         
         # Custom coefficients for grads
         # Determined with sweat and tears
-        params.m.grad *= 0.1
-        params.I.grad *= 2e2
-        params.stiffness.grad *= 1
+        params.m.grad *= 0.01
+        params.I.grad *= 2e6
         params.damping.grad *= 1e6
+        params.stiffness.grad *= 1
         params.grow_rate.grad *= 3e4
         
         # Clip gradients, FIXME sometimes the grads explode for no reason
@@ -389,12 +389,22 @@ if __name__ == '__main__':
         )
 
     # Initial guess values
+    # params.half_len = 3.0 / ipm / 1000 / 2
+    # params.radius = 15.0 / 2 / ipm / 1000 * 0.05
+    # params.m = torch.tensor([0.002], dtype = torch.float32)
+    # params.I = torch.tensor([5], dtype = torch.float32)
+    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    # params.damping = torch.tensor([10.0], dtype = torch.float32)
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    
     params.half_len = 3.0 / ipm / 1000 / 2
     params.radius = 15.0 / 2 / ipm / 1000 * 0.05
-    params.m = torch.tensor([0.002], dtype = torch.float32)
-    params.I = torch.tensor([5], dtype = torch.float32)
-    params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    params.damping = torch.tensor([10.0], dtype = torch.float32)
+    params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
+    params.I = 2 * torch.tensor([5], dtype = torch.float32)
+    params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+    
+    # Note to tuners setting this low cheats the loss function 
     params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
     
     # Declare optimization variables
@@ -418,13 +428,12 @@ if __name__ == '__main__':
             torch.nn.init.xavier_normal_(layer.weight)
             torch.nn.init.zeros_(layer.bias)    
         
-
     # Set up optimizer
     optimizer_params = [params.m, params.I, params.stiffness, params.damping, params.grow_rate]
     
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-3, betas = (0.9, 0.999), weight_decay = 0)
+    optimizer = torch.optim.AdamW(optimizer_params, lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
     # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
     # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
     
