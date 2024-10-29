@@ -50,7 +50,7 @@ def draw_one_vine(x, y, theta, params, col='b'):
         main_ax.add_patch(circle)
 
 
-def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obstacles=True, col='b'):
+def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obstacles=True, **kwargs):
     global main_ax, fig_ax
     
     if clear:
@@ -79,7 +79,7 @@ def draw_batched(params: VineParams, state, bodies, lims=True, clear=True, obsta
         state_item = StateTensor(state[i])
         leng = bodies[i]
         
-        draw_one_vine(state_item.x[:leng], state_item.y[:leng], state_item.theta[:leng], params, col=col)
+        draw_one_vine(state_item.x[:leng], state_item.y[:leng], state_item.theta[:leng], params, **kwargs)
 
     # if hasattr(params, 'dbg_dist'):
     #     for x, y, dist, contact in zip(state.x, state.y, params.dbg_dist, params.dbg_contactpts):
