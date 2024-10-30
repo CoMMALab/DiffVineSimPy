@@ -8,7 +8,7 @@ from sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
 
 from matplotlib import pyplot as plt
-from sim.render import draw_batched, vis_init
+from sim.render import draw_batched, log_stiffness_func, vis_init
 from torch.utils.tensorboard import SummaryWriter
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
@@ -319,6 +319,9 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
         if params.stiffness_mode == 'linear':
             writer.add_scalar('Gradients/Stiffness_grad', params.stiffness_val.grad.item(), iter)
 
+        # Call the helper function to log stiffness_func details
+        log_stiffness_func(writer, params.stiffness_func, iter)
+        
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
