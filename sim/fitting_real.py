@@ -2,6 +2,7 @@ import os
 import math
 import torch
 
+from sim.read_yitian import read_yitian
 from sim.vine import StateTensor, VineParams, create_state_batched, forward_batched_part, forward, generate_segments_from_rectangles, init_state_batched, zero_out, zero_out_custom
 from sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
@@ -84,7 +85,7 @@ def distance(state, bodies, true_state, true_bodies):
     return avg_distance    # [1] tensor
 
 
-def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
+def convert_to_valid_state(state, state_nbodies, half_len, max_bodies):
     '''
     Given a batch of N points BxN, where N is the sequence (x, y, t, x2, y2, t2, ...),
     convert this to a sequence of points that are exactly d units apart,
@@ -98,33 +99,29 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
     - points: Tensor of shape [B, max_bodies, 3], where M is the number of points that are d units apart.
     - num_bodies_tensor: Tensor of shape [B, 1], the number of bodies computed for each batch item.
     '''
+
+    # Stats
     d = half_len * 2
     B, N = state.shape
-    links = 50     # Trust me
 
+    # Destination buffer
     points_tensor = torch.zeros((B, max_bodies, 3), dtype = torch.float32)
     bodies = torch.zeros((B, 1), dtype = torch.int64)
 
-    points_tensor[:, 0, 0] = start_x.flatten()
-    points_tensor[:, 0, 1] = start_y.flatten()
+    points_tensor[:, 0, 0] = 0
+    points_tensor[:, 0, 1] = 0
 
     for b in range(B):
-        # plot the truth state
-        # plt.figure(2)
-        # # Make the color a rainbow
-        # cmap = plt.get_cmap('rainbow')
-        # plt.cla()
-        # plt.scatter(state[b, 0:links*3:3], state[b, 1:links*3:3], c=range(len(state[b, 0:links*3:3])), cmap=cmap)
-        # plt.pause(0.001)
 
         # Initialize the starting point
-        current_x = start_x[b].item()
-        current_y = start_y[b].item()
+        current_x = points_tensor[b, 0, 0].item()
+        current_y = points_tensor[b, 0, 1].item()
         current_point = torch.tensor([current_x, current_y])
 
         total_bodies = 0   # Start with the first point
         i = 0              # Index for iterating through input points
 
+        links = int(state_nbodies[b].item())
         # Loop until all input points are processed
         while i < links:
             next_x = state[b, i * 3].item()
@@ -182,10 +179,24 @@ def convert_to_valid_state(start_x, start_y, state, half_len, max_bodies):
 
         bodies[b] = total_bodies
 
+        if total_bodies < 2:
+            continue
+
+        # # plot the truth state
+        # plt.figure(2)
+        # # Make the color a rainbow
+        # cmap = plt.get_cmap('rainbow')
+        # plt.cla()
+        # plt.scatter(state[b, 0:links*3:3], state[b, 1:links*3:3], c=range(len(state[b, 0:links*3:3])), cmap=cmap)
+
+        # # Plot the points
+        # draw_batched(params, points_tensor.view(B, -1)[b:b+1], bodies[b:b+1], lims=False, clear=True, obstacles=False, c='r')
+        # plt.pause(0.1)
+
     return points_tensor.view(B, -1), bodies
 
 
-def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
+def train(params: VineParams, true_states, true_nbodies, optimizer, writer, mutable_iter):
     '''
     Trains one batch with shared params.obstacles 
     Args:
@@ -193,23 +204,47 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         truth_states (torch.Tensor) [T, 3N]: 
     '''
 
+    print('Converting raw data')
+
+    # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
+    true_states, true_nbodies = convert_to_valid_state(
+        true_states, true_nbodies,
+        params.half_len, params.max_bodies)
+
+    # Filter out rows with less than 2 bodies
+    mask = (true_nbodies >= 2).squeeze()
+    true_states = true_states[mask, :]
+    true_nbodies = true_nbodies[mask]
+
+    # Warn if filtered out more than 10%
+    if mask.sum() / mask.shape[0] < 0.9:
+        print(
+            f'Warning: Filtered out {mask.shape[0] - mask.sum()} rows with'
+            'less than 2 bodies, out of {train_batch_size} total'
+            )
+
     # train_batch_size = truth_states.shape[0] - 1
-    train_batch_size = 200  # FIXME I made the batch smaller for testing
+    # FIXME I made the batch smaller for testing
+    train_batch_size = 90 # true_states.shape[0]
 
     # Construct initial state
-    init_headings = torch.full((train_batch_size, 1), fill_value = -52 * math.pi / 180)
+    init_headings = torch.full((train_batch_size, 1), fill_value = 0)
     init_x = torch.full((train_batch_size, 1), 0.0)
     init_y = torch.full((train_batch_size, 1), 0.0)
 
     # Create empty pred_dstate so we can save it across iterations
     _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
 
-    print('Converting raw data')
-
-    # Convert the ground truth data (arbitrarily spaced points) to a sequence of valid vine states
-    true_states, true_nbodies = convert_to_valid_state(init_x, init_y, truth_states[:train_batch_size], params.half_len, params.max_bodies)
+    true_states = true_states[:train_batch_size]
+    true_nbodies = true_nbodies[:train_batch_size]
 
     print('Begin loop')
+
+    # Visualize the ground truth at 0
+    draw_batched(params, true_states[None, 0], true_nbodies[None, 0], clear = True, obstacles = True, c = 'g')
+
+    plt.pause(0.001)
+    # plt.show()
 
     # Train loop
     for _ in range(10000000):
@@ -221,19 +256,18 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
         # next iteration. This is really crude and I'm not sure it works but will do for now
 
         optimizer.zero_grad()
-        # sqrtm_module.
 
-        # HACK: Detach the prior iteration so gradients won't depend on non-existant parts of the computational graph
         pred_dstate = pred_dstate.detach().clone()
         true_states = true_states.detach().clone()
         true_nbodies = true_nbodies.detach().clone()
-
+        
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
                 true_states, pred_dstate, true_nbodies)
 
         # Set the predicted velocity as the input to the next timestep
-        pred_dstate[:, 1:] = pred_dstate[:, :-1]
-        pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
+        # pred_dstate[:, 1:] = pred_dstate[:, :-1]
+        # pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
+        pred_dstate[:] = 0
 
         # Compute loss (note prediction for idx should be compared to truth at idx+1)
         distances = distance(pred_state[:-1], pred_bodies[:-1], true_states[1:], true_nbodies[1:])
@@ -244,7 +278,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
 
         # Custom coefficients for grads
         # Determined with sweat and tears
-        params.grow_rate.grad *= 3e7 # from 4
+        params.grow_rate.grad *= 3e4
         params.m.grad *= 0.01
         params.I.grad *= 2e6
         params.damping.grad *= 1e6
@@ -253,7 +287,7 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
 
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        # torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -312,10 +346,11 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
             c = 'b'
             )
 
-        plt.xlim([-0.1, 1])
-        plt.ylim([-1, 0.1])
+        plt.xlim([0, 400])
+        plt.ylim([-200, 200])
         plt.title(f'Comparing truth (green) and pred (blue) for t = {idx_to_view}')
         plt.pause(0.001)
+        # plt.show()
 
         print(f'End of iter {iter}, loss {loss.item()}\n')
 
@@ -350,24 +385,6 @@ def train(params: VineParams, truth_states, optimizer, writer, mutable_iter):
 
 
 if __name__ == '__main__':
-    # Good runs
-    # Oct29_00-16-51_Seele
-    # Oct29_01-54-14_Seele
-
-    # Directory containing the CSV files
-    directory = './sim_output'     # Replace with your actual directory
-
-    filenames = []
-
-    # Get files sorted in number order
-    files = os.listdir(directory)
-    files_sorted = sorted(files, key = lambda x: int(x.split('_')[1].split('.')[0]))
-
-    # Load all the data into `states`` and `scenes``
-    for filename in files_sorted:
-        if filename.endswith('.csv'):
-            filepath = os.path.join(directory, filename)
-            filenames.append(filename)
 
     # init heading = 1.31
     # diam = 24.0
@@ -396,25 +413,27 @@ if __name__ == '__main__':
         )
 
     # Initial guess values
-    # params.half_len = 3.0 / ipm / 1000 / 2
-    # params.radius = 15.0 / 2 / ipm / 1000 * 0.05
-    # params.m = torch.tensor([0.002])
-    # params.I = torch.tensor([5.0])
-    # # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    # params.damping = torch.tensor(10.0)
-    # params.grow_rate = torch.tensor(100.0 / ipm / 1000)
+    params.half_len = 5
+    params.radius = 10
+    params.m = torch.tensor([0.002], dtype = torch.float32)
+    params.I = torch.tensor([5.0], dtype = torch.float32)
+    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    params.damping = torch.tensor(10.0, dtype = torch.float32)
+    params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
 
     # Second guesses
-    params.half_len = 3.0 / ipm / 1000 / 2
-    params.radius = 15.0 / 2 / ipm / 1000 * 0.05
-    params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
-    params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    # params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+    # params.half_len = 5
+    # params.radius = 15
+    # params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
+    # params.I = 2 * torch.tensor([5], dtype = torch.float32)
+    # # params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
 
-    # Note to tuners setting this low cheats the loss function
-    params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
-
+    # # Note to tuners setting this low cheats the loss function
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    
+    params.requires_grad_()
+            
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
     optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
@@ -432,30 +451,21 @@ if __name__ == '__main__':
     # Run training separately for each scene
     # train() only works if all the data share obstacles
     # TODO In the future we may rewrite the code to support different obstacles within a batch
-    for filename in filenames:
-        print(f"Loading file: {filename}")
+    for number in [3]:
+        print(f"Loading file: {number}")
 
         # Load vine robot data from CSV
         # RECTS ARE xywh HERE
-        state, scene = load_vine_robot_csv(filepath)
-
-        # Extract the scene
-        for i in range(len(scene)):
-            # Convert xywh to xyxy
-            scene[i] = list(scene[i])
-            scene[i][2] = scene[i][0] + scene[i][2]
-            scene[i][3] = scene[i][1] + scene[i][3]
+        truth_states, truth_bodies, scene = read_yitian(number)
 
         # Convert the obstacles to segments in a form we can use later
-        params.obstacles = torch.tensor(scene)
-        params.segments = generate_segments_from_rectangles(params.obstacles)
-
-        truth_states = torch.from_numpy(state)
+        params.obstacles = None
+        params.segments = torch.concat((scene[:, 0, :], scene[:, 1, :]), axis = 1)
 
         # Train, using the given params as config and (for optimzied vars)
         # initial guess. Then truth states should be a TxS trajectory over T timesteps
         # and fixed-size states of size S. Make sure dt matches
-        train(params, truth_states, optimizer, writer, mutable_iter)
+        train(params, truth_states, truth_bodies, optimizer, writer, mutable_iter)
 
     # Close tensorboard writer
     writer.close()
