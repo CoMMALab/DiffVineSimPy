@@ -45,7 +45,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'linear',
+        stiffness_mode = 'real',
         stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
@@ -57,6 +57,7 @@ if __name__ == '__main__':
     # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
     params.damping = torch.tensor(.18, dtype = torch.float32) / 100
     params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+    params.sicheng = torch.tensor(1, dtype=torch.float32)
     
     # Load MLP from weights
     print('Loading MLP weights from models/model_360_good.pt')

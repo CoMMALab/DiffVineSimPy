@@ -216,7 +216,7 @@ class VineParams:
         self.m = torch.tensor([0.02], dtype=torch.float32)  # 0.002  # Mass of each body
         self.I = torch.tensor([10.0 / 100], dtype=torch.float32)    # Moment of inertia of each body
         self.half_len = torch.tensor(9.0, dtype=torch.float32)
-
+        self.sicheng = torch.tensor(1, dtype=torch.float32)
         # Stiffness and damping coefficients
         self.damping = torch.tensor(50.0 / 100, dtype=torch.float32)        # Damping coefficient (too large is instable!)
         self.vel_damping = torch.tensor(0.1, dtype=torch.float32)     # Damping coefficient for velocity (too large is instable!)
@@ -265,11 +265,17 @@ class VineParams:
             self.damping.requires_grad_()
             self.grow_rate.requires_grad_()
             self.stiffness_val.requires_grad_()
-        else:
+        elif self.stiffness_mode == 'nonlinear':
             self.m.requires_grad_()
             self.I.requires_grad_()
             self.damping.requires_grad_()
             self.grow_rate.requires_grad_()
+        elif self.stiffness_mode == 'real':
+            self.m.requires_grad_()
+            self.I.requires_grad_()
+            self.damping.requires_grad_()
+            self.grow_rate.requires_grad_()
+            self.sicheng.requires_grad_()
                     
     def opt_params(self):
         params = []
@@ -279,7 +285,7 @@ class VineParams:
                     [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val], 
                     'weight_decay': 0}
             )
-        else:
+        elif self.stiffness_mode == 'nonlinear':
             params.append({'params': 
                     [self.m, self.I, self.damping, self.grow_rate], 
                     'weight_decay': 0}
@@ -287,6 +293,11 @@ class VineParams:
                     
             params.append({'params': 
                     self.stiffness_func.parameters(), 
+                    'weight_decay': 0}
+            )
+        elif self.stiffness_mode == 'real':
+            params.append({'params': 
+                    [self.m, self.I, self.damping, self.grow_rate, self.sicheng], 
                     'weight_decay': 0}
             )
             
@@ -421,27 +432,41 @@ def joint_deviation(params: VineParams, init_x, init_y, state: torch.Tensor, bod
     return constraints
 
 # next 3 are sicheng's model
-def predict_moment(turning_angle, P, R):
-    """
-    Given the turning angle in radians, pressure in the robot, and radius of the robot,
-    compute the bending moment at the turning point.
-    """
-    full_moment = np.pi * P * R**3  # Constant-moment model prediction at full wrinkling
-    phiTrans = eval_phi_trans(P)     # Transition angle from linear to wrinkling-based model
-    eps_crit = eval_eps(P)           # Critical strain leading to wrinkling
+import torch
 
-    if turning_angle > phiTrans:
-        # Wrinkling-based model
-        phi2 = turning_angle / 2
-        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
-        alp = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
-    else:
-        # Linear elastic model
-        phi2 = phiTrans / 2
-        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
-        alp_trans = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
-        alp = alp_trans / phiTrans * turning_angle
+def predict_moment(params, turning_angle):
+    """
+    Given a vector of turning angles in radians, pressure in the robot, and radius of the robot,
+    compute the bending moment for each angle.
+    """
+    # Ensure that P and R are tensors
+    P = 1
+    R = 1
 
+    full_moment = torch.pi * P * R**3  # Constant-moment model prediction at full wrinkling
+    phiTrans = eval_phi_trans(P)       # Transition angle from linear to wrinkling-based model
+    eps_crit = eval_eps(P)             # Critical strain leading to wrinkling
+
+    # Separate angles based on whether they are in the wrinkling regime or linear regime
+    wrinkling_mask = turning_angle > phiTrans
+    
+    # Initialize alp tensor for all angles
+    alp = torch.zeros_like(turning_angle)
+    
+    # Wrinkling-based model for angles greater than phiTrans
+    phi2_wrinkling = turning_angle[wrinkling_mask] / 2
+    the_0_wrinkling = torch.arccos(2 * eps_crit / torch.sin(phi2_wrinkling) - 1)
+    alp[wrinkling_mask] = (torch.sin(2 * the_0_wrinkling) + 2 * torch.pi - 2 * the_0_wrinkling) / \
+                          (4 * (torch.sin(the_0_wrinkling) + torch.cos(the_0_wrinkling) * (torch.pi - the_0_wrinkling)))
+    
+    # Linear elastic model for angles less than or equal to phiTrans
+    phi2_linear = phiTrans / 2
+    the_0_linear = torch.arccos(2 * eps_crit / torch.sin(phi2_linear) - 1)
+    alp_trans = (torch.sin(2 * the_0_linear) + 2 * torch.pi - 2 * the_0_linear) / \
+                (4 * (torch.sin(the_0_linear) + torch.cos(the_0_linear) * (torch.pi - the_0_linear)))
+    alp[~wrinkling_mask] = alp_trans / phiTrans * turning_angle[~wrinkling_mask]
+    
+    # Calculate the bending moment for each angle
     M = alp * full_moment
     return M
 
@@ -466,6 +491,54 @@ def eval_phi_trans(P):
                 0.048366932757916 * P_scaled +
                 0.037544481890778)
     return phiTrans
+
+def predict_momentf(params, turning_angle):
+    """
+    Given the turning angle in radians, pressure in the robot, and radius of the robot,
+    compute the bending moment at the turning point.
+    """
+    P = 1
+    R = 1
+    full_moment = np.pi * P * R**3  # Constant-moment model prediction at full wrinkling
+    phiTrans = eval_phi_trans(P)     # Transition angle from linear to wrinkling-based model
+    eps_crit = eval_eps(P)           # Critical strain leading to wrinkling
+
+    if turning_angle > phiTrans:
+        # Wrinkling-based model
+        phi2 = turning_angle / 2
+        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
+        alp = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
+    else:
+        # Linear elastic model
+        phi2 = phiTrans / 2
+        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
+        alp_trans = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
+        alp = alp_trans / phiTrans * turning_angle
+
+    M = alp * full_moment * params.sicheng
+    return M
+
+def eval_epsf(P):
+    """
+    Calculate critical strain that causes wrinkling at different pressures.
+    """
+    P_scaled = (P - 6167) / 5836
+    eps_crit = (0.002077863400343 * P_scaled**3 +
+                0.009091543113141 * P_scaled**2 +
+                0.014512785114617 * P_scaled +
+                0.007656015122415)
+    return eps_crit
+
+def eval_phi_transf(P):
+    """
+    Calculate the bending angle that sees the transition from the linear model to the wrinkling-based model.
+    """
+    P_scaled = (P - 8957) / 5149
+    phiTrans = (0.003180574067535 * P_scaled**3 +
+                0.020924128997619 * P_scaled**2 +
+                0.048366932757916 * P_scaled +
+                0.037544481890778)
+    return phiTrans
 def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential
@@ -480,7 +553,8 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # bend = -1 * 100_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
     
     # Symmetric function, take abs of input
-    stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
+    #stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
+    stiffness_response = predict_moment(params, torch.abs(theta_rel))
     bend = -1 * 100_000 * theta_rel.sign() * stiffness_response - 100 * params.damping.abs() * dtheta_rel
 
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel

@@ -428,6 +428,7 @@ if __name__ == '__main__':
     # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
     params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
     params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
+    params.sicheng = torch.tensor(1, dtype=torch.float32)
     
     
     # Second guesses
