@@ -91,6 +91,7 @@ if __name__ == '__main__':
 
         if frame % 5 == 0:
             draw_batched(params, state, bodies, c='blue')
+            plt.gcf().set_size_inches(10, 10)
             plt.pause(0.001)
 
         if torch.any(bodies >= params.max_bodies):

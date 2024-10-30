@@ -114,20 +114,20 @@ def log_stiffness_func(writer, stiffness_func, iter):
     """
     
     # Log weights, biases, and gradients for each layer in stiffness_func
-    for i, layer in enumerate(stiffness_func):
-        if isinstance(layer, torch.nn.Linear):
-            # Log weights and biases
-            writer.add_histogram(f'Stiffness_func/layer_{i}_weights', layer.weight, iter)
-            writer.add_histogram(f'Stiffness_func/layer_{i}_biases', layer.bias, iter)
+    # for i, layer in enumerate(stiffness_func):
+    #     if isinstance(layer, torch.nn.Linear):
+    #         # Log weights and biases
+    #         writer.add_histogram(f'Stiffness_func/layer_{i}_weights', layer.weight, iter)
+    #         writer.add_histogram(f'Stiffness_func/layer_{i}_biases', layer.bias, iter)
 
-            # Log gradients if they exist
-            if layer.weight.grad is not None:
-                writer.add_histogram(f'Stiffness_func/layer_{i}_weights_grad', layer.weight.grad, iter)
-            if layer.bias.grad is not None:
-                writer.add_histogram(f'Stiffness_func/layer_{i}_biases_grad', layer.bias.grad, iter)
+    #         # Log gradients if they exist
+    #         if layer.weight.grad is not None:
+    #             writer.add_histogram(f'Stiffness_func/layer_{i}_weights_grad', layer.weight.grad, iter)
+    #         if layer.bias.grad is not None:
+    #             writer.add_histogram(f'Stiffness_func/layer_{i}_biases_grad', layer.bias.grad, iter)
 
     # Generate output plot for stiffness_func from inputs -1.5 to 1.5
-    inputs = torch.arange(0, 1.6, 0.1).unsqueeze(1)  # Shape [N, 1]
+    inputs = torch.arange(0, 1.6, 0.05).unsqueeze(1)  # Shape [N, 1]
     with torch.no_grad():
         outputs = stiffness_func(inputs).squeeze()  # Shape [N]
     

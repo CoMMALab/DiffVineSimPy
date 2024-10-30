@@ -322,6 +322,12 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
         # Call the helper function to log stiffness_func details
         log_stiffness_func(writer, params.stiffness_func, iter)
         
+        # Save the model 
+        if iter % 30 == 0 and params.stiffness_mode == 'nonlinear':
+            print(f"Saving model at iter {iter}")
+            torch.save(params.stiffness_func.state_dict(), f"models/model_{iter}.pt")
+            
+        
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
@@ -410,7 +416,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'nonlinear',
+        stiffness_mode = 'linear',
         stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
