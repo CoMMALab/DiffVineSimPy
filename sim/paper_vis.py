@@ -29,12 +29,13 @@ if __name__ == '__main__':
 
     max_bodies = 40
     init_bodies = 2
-    batch_sizes = [1, 1, 1, 1]
-    master = []
+    batch_sizes = [1]
+    master_mean = []
+    master_var = []
     for batch_size in batch_sizes:
-        data = []
-        total_divs = []
-        for i in range(2):
+        parts = [5, 15, 25, 35]
+        output = [[],[],[],[]]
+        for i in range(10):
             # Control the initial heading of each vine in the batch
             init_headings = torch.full((batch_size, 1), math.radians(-45))
             
@@ -49,10 +50,15 @@ if __name__ == '__main__':
             params = VineParams(
                 max_bodies,
                 obstacles = obstacles,
-                grow_rate = 150,
+                grow_rate = 150 / 1000,
                 stiffness_mode='linear',
-                stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32) 
+                stiffness_val = torch.tensor([30_000.0 / 100_000.0]) 
                 )
+            
+            assert params.stiffness_val.dtype == torch.float32
+            assert params.m.dtype == torch.float32
+            assert params.grow_rate.dtype == torch.float32
+            assert params.I.dtype == torch.float32
             
             # Create empty state arrays with the right shape
             state, dstate = create_state_batched(batch_size, max_bodies)
@@ -72,70 +78,62 @@ if __name__ == '__main__':
             total_frames = 0
             body_count = []
             times = []
-            for frame in range(1000):
-                start = time.time()
+            try:
+                for frame in range(1000):
+                    start = time.time()
+                    # Calculate dynamics
+                    bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate = \
+                        forward_batched(init_headings, init_x, init_y, state, dstate, bodies)
 
-                bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
-                    = forward_batched(init_headings, init_x, init_y, state, dstate, bodies, )
-
-                next_dstate_solution = solve(
-                    params, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
+                    # Call solve and handle potential exceptions
+                    next_dstate_solution = solve(
+                        params, dstate, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate
                     )
 
-                # Update state and dstate
-                state += next_dstate_solution.detach() * params.dt
-                dstate = next_dstate_solution.detach()
+                    # Update state and dstate
+                    state += next_dstate_solution.detach() * params.dt
+                    dstate = next_dstate_solution.detach()
 
-                if frame > 5:
-                    tick = time.time() - start
-                    total_time += tick
-                    total_frames += 1
-                    print('Time per frame: ', total_time / total_frames)
-                    body_count.append(bodies.item())
-                    times.append(tick)
+                    if frame > 5:
+                        tick = time.time() - start
+                        total_time += tick
+                        total_frames += 1
+                        print('Time per frame: ', total_time / total_frames)
+                        body_count.append(bodies.item())
+                        times.append(tick)
 
-                if frame % 2 == 0:
-                    if draw:
-                        draw_batched(params, state, bodies, c='green')
-                        plt.pause(0.001)
+                    if frame % 2 == 0:
+                        if draw:
+                            draw_batched(params, state, bodies, c='green')
+                            plt.pause(0.001)
 
-                if torch.any(bodies >= params.max_bodies):
-                    #raise Exception('At least one instance has reached the max body count.')
-                    break
+                    if torch.any(bodies >= params.max_bodies):
+                        #raise Exception('At least one instance has reached the max body count.')
+                        break
 
-                print('===========step end============\n\n')
-
-            counting = False
-            parts = [5, 15, 25, 35]
-            total = 0
-            div = 0
-            #print(body_count, times)
-            output = []
-            divs = []
+                    print('===========step end============\n\n')
+            except KeyboardInterrupt:
+                    # Re-raise the KeyboardInterrupt exception to allow Ctrl+C to stop the program
+                    print("Keyboard interrupt detected. Exiting loop.")
+                    raise
+            except Exception as e:
+                print(f"Error in solve(): {e}. Restarting loop iteration.")
+                continue  # Restart loop iteration on error
             for i, num in enumerate(body_count):
-                if any(abs(num-x) <= 2 for x in parts):
-                    #print(num, counting)
-                    if counting:
-                        total += times[i]
-                        div += 1
-                    else:
-                        counting = True
-                        if div > 0:
-                            output.append(total)
-                            divs.append(div)
-                            total = 0
-                            div = 0
-                        total += times[i]
-                        div += 1
-                else:
-                    counting = False
-            output.append(total)
-            divs.append(div)
-            data.append(output)
-            total_divs.append(divs)
-        data = np.sum(np.array(data), axis=0)
-        total_divs = np.sum(np.array(total_divs), axis=0)
-        data /= total_divs
-        master.append(data)
-    print(master)
+                for j, x in enumerate(parts):
+                    if abs(num-x) <= 2:
+                        output[j].append(times[i])
+        means = []
+        vars = []
+        for n_bod in output:
+            n_bod = np.array(n_bod)
+            mean = np.mean(n_bod, axis=0)
+            var = np.var(n_bod, axis=0)
+            means.append(mean)
+            vars.append(var)
+        master_mean.append(means)
+        master_var.append(vars)
+    print(master_mean, master_var)
+    np.save('means.npy', np.array(master_mean))
+    np.save('vars.npy', np.array(master_var))
         
