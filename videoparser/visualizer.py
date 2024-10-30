@@ -85,7 +85,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
             break  # End of video
 
         # if video is flipped, uncomment this
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        #frame = cv2.rotate(frame, cv2.ROTATE_180)
         # Load new treated image if it's the correct frame, and update last_treated_image
         if frame_index >= first_treated_frame and (frame_index - first_treated_frame) % treated_frame_interval == 0:
             image_path = os.path.join(treated_images_folder, f'frame_{frame_index:04d}.jpg')
@@ -97,7 +97,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
                     aspect_ratio = w/h
                     if overlay is None:
                         points = processor.find_points(treated_image, walls, 10)
-                        treated_image = draw_points(treated_image, points)
+                        #treated_image = draw_points(treated_image, points)
                         treated_image = draw_walls(treated_image, walls)
                         last_treated_image = cv2.resize(treated_image, (int(frame.shape[0] * aspect_ratio), frame.shape[0]))
                     else:
@@ -127,7 +127,7 @@ def play_video_with_treated_frames(video_path, treated_images_folder, overlay=No
     cv2.destroyAllWindows()
 
 # Usage
-video_path = './data/videos/vid4.mp4'
-treated_images_folder = './data/frames/vid4/'
+video_path = './data/videos/vid3.mp4'
+treated_images_folder = './data/frames/vid3/'
 #play_video_with_treated_frames(video_path, treated_images_folder, './data/frames/vid3/')
 play_video_with_treated_frames(video_path, treated_images_folder)

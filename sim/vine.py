@@ -3,6 +3,7 @@ import torch
 import functorch
 from torch.autograd.functional import jacobian
 import cvxpy as cp
+import numpy as np
 from functools import partial
 
 from sim.solver import init_layers, solve_layers
@@ -404,7 +405,52 @@ def joint_deviation(params: VineParams, init_x, init_y, state: torch.Tensor, bod
 
     return constraints
 
+# next 3 are sicheng's model
+def predict_moment(turning_angle, P, R):
+    """
+    Given the turning angle in radians, pressure in the robot, and radius of the robot,
+    compute the bending moment at the turning point.
+    """
+    full_moment = np.pi * P * R**3  # Constant-moment model prediction at full wrinkling
+    phiTrans = eval_phi_trans(P)     # Transition angle from linear to wrinkling-based model
+    eps_crit = eval_eps(P)           # Critical strain leading to wrinkling
 
+    if turning_angle > phiTrans:
+        # Wrinkling-based model
+        phi2 = turning_angle / 2
+        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
+        alp = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
+    else:
+        # Linear elastic model
+        phi2 = phiTrans / 2
+        the_0 = np.arccos(2 * eps_crit / np.sin(phi2) - 1)
+        alp_trans = (np.sin(2 * the_0) + 2 * np.pi - 2 * the_0) / (4 * (np.sin(the_0) + np.cos(the_0) * (np.pi - the_0)))
+        alp = alp_trans / phiTrans * turning_angle
+
+    M = alp * full_moment
+    return M
+
+def eval_eps(P):
+    """
+    Calculate critical strain that causes wrinkling at different pressures.
+    """
+    P_scaled = (P - 6167) / 5836
+    eps_crit = (0.002077863400343 * P_scaled**3 +
+                0.009091543113141 * P_scaled**2 +
+                0.014512785114617 * P_scaled +
+                0.007656015122415)
+    return eps_crit
+
+def eval_phi_trans(P):
+    """
+    Calculate the bending angle that sees the transition from the linear model to the wrinkling-based model.
+    """
+    P_scaled = (P - 8957) / 5149
+    phiTrans = (0.003180574067535 * P_scaled**3 +
+                0.020924128997619 * P_scaled**2 +
+                0.048366932757916 * P_scaled +
+                0.037544481890778)
+    return phiTrans
 def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # Compute the response (like potential energy of bending)
     # Can think of the system as always wanting to get rid of potential
@@ -419,7 +465,8 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
     bend = -1 * 1_000_000 * params.stiffness_func(theta_rel.unsqueeze(-1)
                                                   ).squeeze() - params.damping.abs() * dtheta_rel
-
+    # sicheng's model:
+    #bend = predict_moment()
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
     zero_out_custom(bend, bodies)

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import heapq
-import classifier
+#import classifier
 import matplotlib.pyplot as plt
 import os
 import copy
