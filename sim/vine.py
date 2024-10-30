@@ -217,6 +217,7 @@ class VineParams:
         self.I = torch.tensor([10.0 / 100], dtype=torch.float32)    # Moment of inertia of each body
         self.half_len = torch.tensor(9.0, dtype=torch.float32)
         self.sicheng = torch.tensor(1, dtype=torch.float32)
+        self.sicheng2 = torch.tensor(1, dtype=torch.float32)
         # Stiffness and damping coefficients
         self.damping = torch.tensor(50.0 / 100, dtype=torch.float32)        # Damping coefficient (too large is instable!)
         self.vel_damping = torch.tensor(0.1, dtype=torch.float32)     # Damping coefficient for velocity (too large is instable!)
@@ -229,7 +230,7 @@ class VineParams:
         # Init stiffness function
         if self.stiffness_mode == 'linear':
             self.stiffness_func = lambda theta_rel: self.stiffness_val.abs() * theta_rel
-        else:
+        elif self.stiffness_mode == 'nonlinear':
             # Declare a 2-layer MLP for stiffness
             # Takes 1 scalar input and outputs 1 scalar output
             self.stiffness_func = torch.nn.Sequential(
@@ -241,7 +242,8 @@ class VineParams:
                 if isinstance(layer, torch.nn.Linear):
                     torch.nn.init.xavier_normal_(layer.weight)
                     torch.nn.init.zeros_(layer.bias)
-
+        elif self.stiffness_mode == 'real':
+            pass
         # Environment obstacles (rects only for now)
         self.obstacles = obstacles
 
@@ -276,6 +278,7 @@ class VineParams:
             self.damping.requires_grad_()
             self.grow_rate.requires_grad_()
             self.sicheng.requires_grad_()
+            self.sicheng2.requires_grad_()
                     
     def opt_params(self):
         params = []
@@ -297,7 +300,7 @@ class VineParams:
             )
         elif self.stiffness_mode == 'real':
             params.append({'params': 
-                    [self.m, self.I, self.damping, self.grow_rate, self.sicheng], 
+                    [self.m, self.I, self.damping, self.grow_rate, self.sicheng, self.sicheng2], 
                     'weight_decay': 0}
             )
             
@@ -440,11 +443,11 @@ def predict_moment(params, turning_angle):
     compute the bending moment for each angle.
     """
     # Ensure that P and R are tensors
-    P = 1
+    P = params.sicheng
     R = 1
 
     full_moment = torch.pi * P * R**3  # Constant-moment model prediction at full wrinkling
-    phiTrans = eval_phi_trans(P)       # Transition angle from linear to wrinkling-based model
+    phiTrans = eval_phi_trans(P) # eval_phi_trans(P)       # Transition angle from linear to wrinkling-based model
     eps_crit = eval_eps(P)             # Critical strain leading to wrinkling
 
     # Separate angles based on whether they are in the wrinkling regime or linear regime
@@ -454,9 +457,9 @@ def predict_moment(params, turning_angle):
     alp = torch.zeros_like(turning_angle)
     
     # Wrinkling-based model for angles greater than phiTrans
-    phi2_wrinkling = turning_angle[wrinkling_mask] / 2
+    phi2_wrinkling = turning_angle / 2
     the_0_wrinkling = torch.arccos(2 * eps_crit / torch.sin(phi2_wrinkling) - 1)
-    alp[wrinkling_mask] = (torch.sin(2 * the_0_wrinkling) + 2 * torch.pi - 2 * the_0_wrinkling) / \
+    alp_wrikle = (torch.sin(2 * the_0_wrinkling) + 2 * torch.pi - 2 * the_0_wrinkling) / \
                           (4 * (torch.sin(the_0_wrinkling) + torch.cos(the_0_wrinkling) * (torch.pi - the_0_wrinkling)))
     
     # Linear elastic model for angles less than or equal to phiTrans
@@ -464,10 +467,12 @@ def predict_moment(params, turning_angle):
     the_0_linear = torch.arccos(2 * eps_crit / torch.sin(phi2_linear) - 1)
     alp_trans = (torch.sin(2 * the_0_linear) + 2 * torch.pi - 2 * the_0_linear) / \
                 (4 * (torch.sin(the_0_linear) + torch.cos(the_0_linear) * (torch.pi - the_0_linear)))
-    alp[~wrinkling_mask] = alp_trans / phiTrans * turning_angle[~wrinkling_mask]
+    alp_nowrinkle = alp_trans / phiTrans * turning_angle
+    
+    alp = torch.where(wrinkling_mask, alp_wrikle, alp_nowrinkle)
     
     # Calculate the bending moment for each angle
-    M = alp * full_moment
+    M = alp * full_moment *params.sicheng2
     return M
 
 def eval_eps(P):
@@ -479,7 +484,8 @@ def eval_eps(P):
                 0.009091543113141 * P_scaled**2 +
                 0.014512785114617 * P_scaled +
                 0.007656015122415)
-    return eps_crit
+    return torch.tensor(eps_crit, dtype=torch.float32)
+    
 
 def eval_phi_trans(P):
     """
@@ -490,7 +496,7 @@ def eval_phi_trans(P):
                 0.020924128997619 * P_scaled**2 +
                 0.048366932757916 * P_scaled +
                 0.037544481890778)
-    return phiTrans
+    return torch.tensor(phiTrans, dtype=torch.float32)
 
 def predict_momentf(params, turning_angle):
     """
@@ -553,8 +559,14 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # bend = -1 * 100_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
     
     # Symmetric function, take abs of input
-    #stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
-    stiffness_response = predict_moment(params, torch.abs(theta_rel))
+    if params.stiffness_mode == 'nonlinear':
+        stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
+    elif params.stiffness_mode == 'linear':
+        stiffness_response = params.stiffness_val.abs() * theta_rel 
+    elif params.stiffness_mode == 'real':
+        stiffness_response = predict_moment(params, torch.abs(theta_rel)) * 0.0002
+    zero_out_custom(stiffness_response, bodies)
+    #print('stiff', stiffness_response)
     bend = -1 * 100_000 * theta_rel.sign() * stiffness_response - 100 * params.damping.abs() * dtheta_rel
 
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel

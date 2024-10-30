@@ -8,8 +8,16 @@ import copy
 import re
 
 # takes sim output and reverses the transformation to match original video
+def output_drawer():
+    folder = '../sim/sim_out/'
+    for i in range(350):
+        filename = f'points{i}.npy'
+        path = os.path.join(folder, filename)
+        points = np.load(path)
+        walls = np.load('./data/frames/vid3/walls.npy')
+        
 def reverse_transform_point(x, R, p):
-    return R.dot(x + p) * [1, -1]
+    return R.dot(x * [1, -1]) - p
 def reverse_transformation(walls, points):
     points = np.array(points)
     p = copy.deepcopy(walls[0][1])
@@ -216,6 +224,7 @@ def main():
     wall_path = './data/frames/vid3/walls.npy'
     walls = np.load(wall_path)
     img = cv2.imread(img_path)
+    output_drawer()
     #print(img.shape)
     #points = find_points(img, walls, 10)
     #print(walls, points)

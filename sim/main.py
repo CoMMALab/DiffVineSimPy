@@ -10,7 +10,7 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
 if __name__ == '__main__':
-
+    draw = False
     ipm = 39.3701 / 1000   # inches per mm
     b1 = [5.5 / ipm, -5 / ipm, 4 / ipm, 7 / ipm]
     b2 = [4 / ipm, -17 / ipm, 7 / ipm, 5 / ipm]
@@ -33,10 +33,10 @@ if __name__ == '__main__':
     batch_size = 1
     
     # Control the initial heading of each vine in the batch
-    init_headings = torch.full((batch_size, 1), math.radians(-20))
+    init_headings = torch.full((batch_size, 1), math.radians(0))
     
     # Add some noise to the initial headings
-    init_headings += torch.randn_like(init_headings) * math.radians(10)
+    init_headings += torch.randn_like(init_headings) * math.radians(0)
     
     init_x = torch.full((batch_size, 1), 0.0)
     init_y = torch.full((batch_size, 1), 0.0)
@@ -45,14 +45,14 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'real',
+        stiffness_mode = 'nonlinear',
         stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
     # Initial guess values
     params.half_len = 5
     params.radius = 7
-    params.m = torch.tensor([0.0313], dtype = torch.float32)
+    params.m = torch.tensor([0.000313], dtype = torch.float32)
     params.I = torch.tensor([0.1691], dtype = torch.float32)
     # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
     params.damping = torch.tensor(.18, dtype = torch.float32) / 100
@@ -61,7 +61,8 @@ if __name__ == '__main__':
     
     # Load MLP from weights
     print('Loading MLP weights from models/model_360_good.pt')
-    params.stiffness_func.load_state_dict(torch.load('models/model_360_good.pt'))
+    if params.stiffness_mode == 'nonlinear':
+        params.stiffness_func.load_state_dict(torch.load('models/model_360_good.pt'))
         
     assert params.stiffness_val.dtype == torch.float32
     assert params.m.dtype == torch.float32
@@ -74,10 +75,11 @@ if __name__ == '__main__':
     
     # Fill the state arrays using init_headings
     init_state_batched(params, state, bodies, init_headings)
-
-    vis_init()
-    draw_batched(params, state, bodies)
-    plt.pause(0.001)
+    
+    if draw:
+        vis_init()
+        draw_batched(params, state, bodies)
+        plt.pause(0.001)
 
     forward_batched: Callable = torch.func.vmap(partial(forward_batched_part, params))
 
@@ -109,9 +111,17 @@ if __name__ == '__main__':
             print('Time per frame: ', total_time / total_frames)
 
         if frame % 5 == 0:
-            draw_batched(params, state, bodies, c='blue')
-            plt.gcf().set_size_inches(10, 10)
-            plt.pause(0.001)
+            if draw:
+                draw_batched(params, state, bodies, c='blue')
+                plt.gcf().set_size_inches(10, 10)
+                plt.pause(0.001)
+                
+        if not draw:
+            n = bodies[0].item()
+            points = state[0, :n * 3]  # Limit to the first j groups
+            points = points.view(-1, 3)[:, :2]  # Reshape and take only x and y
+            pointsnp = points.numpy()
+            np.save('sim/sim_out/points' + str(frame) + '.npy', pointsnp)
 
         if torch.any(bodies >= params.max_bodies):
             raise Exception('At least one instance has reached the max body count.')

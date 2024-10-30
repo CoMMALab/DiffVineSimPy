@@ -259,14 +259,14 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         true_states = true_states.detach().clone()
         true_nbodies = true_nbodies.detach().clone()
-        
+
         # Estimate pred_dstate from the previous frame
         est_dstate[0] = 0
         est_dstate[1:] = true_states[1:] - true_states[:-1]
-        
+
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
                 true_states, est_dstate, true_nbodies)
-                
+
         # Compute loss (note prediction for idx should be compared to truth at idx+1)
         distances = distance(pred_state[:-1], pred_bodies[:-1], true_states[1:], true_nbodies[1:])
 
@@ -310,6 +310,9 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
         writer.add_scalar('Parameters/Damping', params.damping.item(), iter)
         if params.stiffness_mode == 'linear':
             writer.add_scalar('Parameters/Stiffness', params.stiffness_val.item(), iter)
+        elif params.stiffness_mode == 'real':
+            writer.add_scalar('Parameters/sicheng1', params.sicheng.item(), iter)
+            writer.add_scalar('Parameters/sicheng2', params.sicheng2.item(), iter)
 
         # Log gradients
         writer.add_scalar('Gradients/Grow_Rate_grad', params.grow_rate.grad.item(), iter)
@@ -320,14 +323,14 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
             writer.add_scalar('Gradients/Stiffness_grad', params.stiffness_val.grad.item(), iter)
 
         # Call the helper function to log stiffness_func details
-        log_stiffness_func(writer, params.stiffness_func, iter)
-        
-        # Save the model 
+        if params.stiffness_mode != 'real':
+            log_stiffness_func(writer, params.stiffness_func, iter)
+
+        # Save the model
         if iter % 30 == 0 and params.stiffness_mode == 'nonlinear':
             print(f"Saving model at iter {iter}")
             torch.save(params.stiffness_func.state_dict(), f"models/model_{iter}.pt")
-            
-        
+
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
@@ -423,14 +426,28 @@ if __name__ == '__main__':
     # Initial guess values
     params.half_len = 5
     params.radius = 7
-    params.m = torch.tensor([0.002], dtype = torch.float32)
-    params.I = torch.tensor([5.0], dtype = torch.float32) / 100
-    # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
-    params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
-    params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
-    params.sicheng = torch.tensor(1, dtype=torch.float32)
-    
-    
+    if params.stiffness_mode == 'real':
+        params.m = torch.tensor([0.002], dtype = torch.float32)
+        params.I = torch.tensor([5.0], dtype = torch.float32) / 100
+        # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
+        params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
+        params.sicheng = torch.tensor(10_000, dtype = torch.float32)
+        params.sicheng2 = torch.tensor(1 / 160_000, dtype = torch.float32)
+        params.dt = 1/30
+    elif params.stiffness_mode == 'linear':
+        params.m = torch.tensor([0.000313], dtype = torch.float32)
+        params.I = torch.tensor([0.1691], dtype = torch.float32)
+        params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        params.damping = torch.tensor(.18, dtype = torch.float32) / 100
+        params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+    elif params.stiffness_mode == 'nonlinear':
+        params.m = torch.tensor([0.000313], dtype = torch.float32)
+        params.I = torch.tensor([0.1691], dtype = torch.float32)
+        # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        params.damping = torch.tensor(.18, dtype = torch.float32) / 100
+        params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+
     # Second guesses
     # params.half_len = 5
     # params.radius = 15
@@ -441,9 +458,9 @@ if __name__ == '__main__':
 
     # # Note to tuners setting this low cheats the loss function
     # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
-    
+
     params.requires_grad_()
-            
+
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
     optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95))
