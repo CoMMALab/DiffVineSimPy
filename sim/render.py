@@ -2,6 +2,7 @@ import torch
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 import plotly.graph_objects as go
+from PIL import Image
 import torchvision
 import io
 
@@ -126,7 +127,7 @@ def log_stiffness_func(writer, stiffness_func, iter):
                 writer.add_histogram(f'Stiffness_func/layer_{i}_biases_grad', layer.bias.grad, iter)
 
     # Generate output plot for stiffness_func from inputs -1.5 to 1.5
-    inputs = torch.arange(-1.5, 1.6, 0.1).unsqueeze(1)  # Shape [N, 1]
+    inputs = torch.arange(0, 1.6, 0.1).unsqueeze(1)  # Shape [N, 1]
     with torch.no_grad():
         outputs = stiffness_func(inputs).squeeze()  # Shape [N]
     

@@ -232,7 +232,7 @@ class VineParams:
             # Declare a 2-layer MLP for stiffness
             # Takes 1 scalar input and outputs 1 scalar output
             self.stiffness_func = torch.nn.Sequential(
-                torch.nn.Linear(1, 10), torch.nn.Tanh(), torch.nn.Linear(10, 1).AbsLayer()
+                torch.nn.Linear(1, 10), torch.nn.Tanh(), torch.nn.Linear(10, 1), AbsLayer()
                 )
 
             # Initialize the weights with xavier normal
@@ -271,10 +271,25 @@ class VineParams:
             self.grow_rate.requires_grad_()
                     
     def opt_params(self):
+        params = []
+        
         if self.stiffness_mode == 'linear':
-            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val]
+            params.append({'params': 
+                    [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val], 
+                    'weight_decay': 0}
+            )
         else:
-            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_func.parameters()]
+            params.append({'params': 
+                    [self.m, self.I, self.damping, self.grow_rate], 
+                    'weight_decay': 0}
+            )
+                    
+            params.append({'params': 
+                    self.stiffness_func.parameters(), 
+                    'weight_decay': 0}
+            )
+            
+        return params
 
 
 def create_M(m, I, max_bodies):
@@ -417,8 +432,10 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     # FIXME Comment out to switch bending modes
 
     # bend = -1 * 100_000 * params.stiffness_func(theta_rel.unsqueeze(-1)).squeeze() - params.damping.abs() * dtheta_rel
-    bend = -1 * 100_000 * params.stiffness_func(theta_rel.unsqueeze(-1)
-                                                  ).squeeze() - 100 * params.damping.abs() * dtheta_rel
+    
+    # Symmetric function, take abs of input
+    stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
+    bend = -1 * 100_000 * theta_rel.sign() * stiffness_response - 100 * params.damping.abs() * dtheta_rel
 
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel

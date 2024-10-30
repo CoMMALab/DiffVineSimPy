@@ -285,7 +285,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(params.opt_params()[0]['params'], max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -349,6 +349,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         plt.xlim([0, 400])
         plt.ylim([-200, 200])
+        plt.gcf().set_size_inches(10, 10)
         plt.title(f'Comparing truth (green) and pred (blue) for t = {idx_to_view}')
         plt.pause(0.001)
         # plt.show()
@@ -409,7 +410,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'linear',
+        stiffness_mode = 'nonlinear',
         stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
@@ -437,7 +438,7 @@ if __name__ == '__main__':
             
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
+    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95))
     # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
     # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
 
