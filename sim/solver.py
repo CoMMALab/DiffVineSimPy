@@ -64,7 +64,7 @@ def solve_layers(Q, p, G, h, A, b):
 
     solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10_000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
-
+        
     solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args = solver_args_scs)
 
     return solution[0]

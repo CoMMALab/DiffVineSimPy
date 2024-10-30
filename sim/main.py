@@ -4,6 +4,8 @@ from .render import *
 from typing import Callable
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
+# torch.autograd.set_detect_anomaly(True)
+
 import time
 
 if __name__ == '__main__':
@@ -25,7 +27,7 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
 
-    max_bodies = 40
+    max_bodies = 70
     init_bodies = 2
     batch_size = 1
     
@@ -33,9 +35,7 @@ if __name__ == '__main__':
     init_headings = torch.full((batch_size, 1), math.radians(-20))
     
     # Add some noise to the initial headings
-    init_headings += torch.randn_like(init_headings) * math.radians(20)
-    
-    
+    init_headings += torch.randn_like(init_headings) * math.radians(10)
     
     init_x = torch.full((batch_size, 1), 0.0)
     init_y = torch.full((batch_size, 1), 0.0)
@@ -45,8 +45,13 @@ if __name__ == '__main__':
         obstacles = obstacles,
         grow_rate = 150,
         stiffness_mode='linear',
-        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32) 
+        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0]) 
         )
+        
+    assert params.stiffness_val.dtype == torch.float32
+    assert params.m.dtype == torch.float32
+    assert params.grow_rate.dtype == torch.float32
+    assert params.I.dtype == torch.float32
     
     # Create empty state arrays with the right shape
     state, dstate = create_state_batched(batch_size, max_bodies)
@@ -84,7 +89,7 @@ if __name__ == '__main__':
             total_frames += 1
             print('Time per frame: ', total_time / total_frames)
 
-        if frame % 2 == 0:
+        if frame % 5 == 0:
             draw_batched(params, state, bodies, c='blue')
             plt.pause(0.001)
 

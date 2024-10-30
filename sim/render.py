@@ -46,7 +46,7 @@ def draw_one_vine(x, y, theta, params, **kwargs):
 
     # Draw circle colliders
     for x, y in zip(x, y):
-        circle = plt.Circle((x, y), params.radius, color = 'r', fill = False)
+        circle = plt.Circle((x, y), params.radius, color = 'g', alpha = 0.7, fill = False)
         main_ax.add_patch(circle)
 
 
@@ -63,7 +63,7 @@ def draw_batched(params: VineParams, state, bodies, lims=False, clear=True, obst
         main_ax.set_ylim(-490, 30)
 
     # Draw the obstacles
-    if obstacles:
+    if obstacles and params.obstacles is not None:
         for obstacle in params.obstacles:
             obstacle_patch = Rectangle(
                 (obstacle[0], obstacle[1]),
@@ -74,11 +74,17 @@ def draw_batched(params: VineParams, state, bodies, lims=False, clear=True, obst
                 facecolor = 'moccasin'
                 )
             main_ax.add_patch(obstacle_patch)
+    
+    if obstacles and params.obstacles is None:
+        # Draw params.segments (Nx4), as x1 y1 x2 y2
+        for segment in params.segments:
+            main_ax.plot([segment[0], segment[2]], [segment[1], segment[3]], color = 'black', linewidth = 1)
+        
         
     for i in range(state.shape[0]):
         state_item = StateTensor(state[i])
         leng = bodies[i]
-                
+        
         draw_one_vine(state_item.x[:leng], state_item.y[:leng], state_item.theta[:leng], params, **kwargs)
 
     # if hasattr(params, 'dbg_dist'):

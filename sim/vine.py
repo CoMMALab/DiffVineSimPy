@@ -52,6 +52,41 @@ def generate_segments_from_rectangles(obstacles):
 
     return segments
 
+def generate_segments_from_rectangles(obstacles):
+    '''
+    obstacles: tensor of shape (num_lines, 2, 2), each row is start, end, with (x, y)
+    Returns:
+        segments: tensor of shape (num_lines, 4), each row is [x_start, y_start, x_end, y_end]
+    '''
+    x1 = obstacles[:, 0]
+    y1 = obstacles[:, 1]
+    x2 = obstacles[:, 2]
+    y2 = obstacles[:, 3]
+
+    # Side 1: bottom edge
+    starts1 = torch.stack([x1, y1], dim = 1)
+    ends1 = torch.stack([x2, y1], dim = 1)
+
+    # Side 2: right edge
+    starts2 = torch.stack([x2, y1], dim = 1)
+    ends2 = torch.stack([x2, y2], dim = 1)
+
+    # Side 3: top edge
+    starts3 = torch.stack([x2, y2], dim = 1)
+    ends3 = torch.stack([x1, y2], dim = 1)
+
+    # Side 4: left edge
+    starts4 = torch.stack([x1, y2], dim = 1)
+    ends4 = torch.stack([x1, y1], dim = 1)
+
+    # Stack all starts and ends
+    starts = torch.cat([starts1, starts2, starts3, starts4], dim = 0) # shape (num_rectangles * 4, 2)
+    ends = torch.cat([ends1, ends2, ends3, ends4], dim = 0)           # shape (num_rectangles * 4, 2)
+
+    # Combine starts and ends into segments
+    segments = torch.cat([starts, ends], dim = 1)  # shape (num_rectangles * 4, 4)
+
+    return segments
 
 def dist2segments(points, segments):
     '''
@@ -167,26 +202,26 @@ class VineParams:
             self,
             max_bodies,
             obstacles = [],
-            grow_rate = 10.0,
+            grow_rate = 10.0 / 1000,
             stiffness_mode = 'linear',
             stiffness_val = None
         ):
         self.max_bodies = max_bodies
         self.dt = 1 / 90               # 1/90  # Time step
         self.radius = 25.0 / 2         # Uncompressed collision radius of each body
-        self.grow_rate = torch.tensor(grow_rate)     # Length grown per unit time
+        self.grow_rate = torch.tensor(grow_rate, dtype=torch.float32)     # Length grown per unit time
 
         # Robot parameters
-        self.m = torch.tensor([0.01])  # 0.002  # Mass of each body
-        self.I = torch.tensor([10])    # Moment of inertia of each body
-        self.half_len = torch.tensor(9)
+        self.m = torch.tensor([0.02], dtype=torch.float32)  # 0.002  # Mass of each body
+        self.I = torch.tensor([10.0], dtype=torch.float32)    # Moment of inertia of each body
+        self.half_len = torch.tensor(9.0, dtype=torch.float32)
 
         # Stiffness and damping coefficients
-        self.damping = torch.tensor(50.0)        # Damping coefficient (too large is instable!)
-        self.vel_damping = torch.tensor(0.1)     # Damping coefficient for velocity (too large is instable!)
+        self.damping = torch.tensor(50.0, dtype=torch.float32)        # Damping coefficient (too large is instable!)
+        self.vel_damping = torch.tensor(0.1, dtype=torch.float32)     # Damping coefficient for velocity (too large is instable!)
 
         if stiffness_val is None:
-            stiffness_val = torch.tensor(30_000.0 / 1_000_000.0)
+            stiffness_val = torch.tensor(30_000.0 / 1_000_000.0, dtype=torch.float32)
         self.stiffness_mode = stiffness_mode
         self.stiffness_val = stiffness_val
 
@@ -221,20 +256,24 @@ class VineParams:
         # Make a tensor containing a flattened list of segments of shape  4NxN
         self.obstacles = torch.tensor(self.obstacles)
         self.segments = generate_segments_from_rectangles(self.obstacles)
-
-    def opt_params(self):
+    
+    def requires_grad_(self):
         if self.stiffness_mode == 'linear':
             self.m.requires_grad_()
             self.I.requires_grad_()
             self.damping.requires_grad_()
             self.grow_rate.requires_grad_()
             self.stiffness_val.requires_grad_()
-            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val]
         else:
             self.m.requires_grad_()
             self.I.requires_grad_()
             self.damping.requires_grad_()
             self.grow_rate.requires_grad_()
+                    
+    def opt_params(self):
+        if self.stiffness_mode == 'linear':
+            return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_val]
+        else:
             return [self.m, self.I, self.damping, self.grow_rate, self.stiffness_func.parameters()]
 
 
@@ -314,16 +353,17 @@ def sdf(params: VineParams, state, bodies):
 
     points = torch.stack((state.x, state.y), dim = -1)
     min_dist, min_contactpts = dist2segments(points, params.segments)
+    
+    # FiXME disabled because we dont have rects for now
+    # inside_points = isinside(points, params.obstacles)
 
-    inside_points = isinside(points, params.obstacles)
-
-    min_dist = torch.where(inside_points, -min_dist, min_dist)
+    # min_dist = torch.where(inside_points, -min_dist, min_dist)
 
     # Make sdf_now negative when uncompressible body penetrates
     min_dist -= params.radius
 
     zero_out_custom(min_dist, bodies)
-
+    
     return min_dist, min_contactpts
 
 
@@ -382,7 +422,6 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
 
     # bend = -1 * theta_rel.sign() * params.stiffness * (0.5 - (1.5 * theta_rel.abs() - 0.7)**2) - params.damping * dtheta_rel
     # bend = -1 * theta_rel.sign() * 1 * params.stiffness * torch.log(theta_rel.abs()*2 + 1) - params.damping * dtheta_rel
-
     zero_out_custom(bend, bodies)
 
     return bend
@@ -492,16 +531,27 @@ def forward_batched_part(params: VineParams, init_heading, init_x, init_y, state
     # Jacobian of joint deviation wrt state
     J = torch.func.jacrev(partial(joint_deviation, params, init_x, init_y))(state, bodies)
     deviation_now = joint_deviation(params, init_x, init_y, state, bodies)
-
+    
+    # print('J isnan', torch.isnan(J).any())
+    # print('deviation_now isnan', torch.isnan(deviation_now).any())
+    
     # Jacobian of growth rate wrt state
     growth_wrt_state, growth_wrt_dstate = torch.func.jacrev(partial(growth_rate, params), argnums=(0, 1))(state, dstate, bodies)
     growth = growth_rate(params, state, dstate, bodies)
-
+    
+    # print('growth_wrt_state isnan', torch.isnan(growth_wrt_state).any())
+    # print('growth_wrt_dstate isnan', torch.isnan(growth_wrt_dstate).any())
+    
     # Stiffness forces
     theta_rel = finite_changes(StateTensor(state).theta, init_heading)
     dtheta_rel = finite_changes(StateTensor(dstate).theta, 0.0)
 
     bend_energy = bending_energy(params, theta_rel, dtheta_rel, bodies)
+    
+    # print('deviation_now', deviation_now.mean())
+    # print('sdf_now', sdf_now.mean())
+    # print('growth', growth.mean())
+    # print('bend_energy', bend_energy.mean())
 
     forces = StateTensor(torch.zeros_like(state))
 
@@ -555,11 +605,11 @@ def solve(
     # Equality constraints
     # Compute growth constraint components
     g_con = (
-        growth.squeeze(1) - params.grow_rate -
+        growth.squeeze(1) - 1000 * params.grow_rate -
         torch.bmm(growth_wrt_dstate, dstate.unsqueeze(2)).squeeze(2).squeeze(1)
         )
     g_coeff = (growth_wrt_state * dt + growth_wrt_dstate)
-
+    
     # Prepare equality constraints
     A = torch.cat([J * dt, g_coeff], dim = 1)
     b = torch.cat([-deviation_now, -g_con.unsqueeze(1)], dim = 1) # [batch_size, N]
