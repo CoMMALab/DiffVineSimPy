@@ -429,6 +429,12 @@ if __name__ == '__main__':
     params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
     params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
 
+
+    # Load MLP from weights
+    print('Loading MLP weights from models/model_360_good.pt')
+    params.stiffness_func.load_state_dict(torch.load('models/model_360_good.pt'))
+    
+    
     # Second guesses
     # params.half_len = 5
     # params.radius = 15
