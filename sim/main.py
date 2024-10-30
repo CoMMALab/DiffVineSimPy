@@ -2,6 +2,7 @@ from sim.solver import *
 from .vine import *
 from .render import *
 from typing import Callable
+from .fitting_real import read_yitian
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 # torch.autograd.set_detect_anomaly(True)
@@ -41,12 +42,21 @@ if __name__ == '__main__':
     init_y = torch.full((batch_size, 1), 0.0)
 
     params = VineParams(
-        max_bodies,
-        obstacles = obstacles,
-        grow_rate = 150 / 1000,
-        stiffness_mode='linear',
-        stiffness_val = torch.tensor([30_000.0 / 100_000.0]) 
+        max_bodies = max_bodies,
+        obstacles = [[0, 0, 0, 0]],
+        grow_rate = -1,
+        stiffness_mode = 'linear',
+        stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
+
+    # Initial guess values
+    params.half_len = 5
+    params.radius = 7
+    params.m = torch.tensor([0.0313], dtype = torch.float32)
+    params.I = torch.tensor([0.1691], dtype = torch.float32)
+    # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+    params.damping = torch.tensor(.18, dtype = torch.float32) / 100
+    params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
         
     assert params.stiffness_val.dtype == torch.float32
     assert params.m.dtype == torch.float32
@@ -69,7 +79,11 @@ if __name__ == '__main__':
     # Measure time per frame
     total_time = 0
     total_frames = 0
+    truth_states, truth_bodies, scene = read_yitian(3)
 
+    # Convert the obstacles to segments in a form we can use later
+    params.obstacles = None
+    params.segments = torch.concat((scene[:, 0, :], scene[:, 1, :]), axis = 1)
     for frame in range(1000):
         start = time.time()
 

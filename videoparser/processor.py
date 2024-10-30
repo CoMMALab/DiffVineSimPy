@@ -7,6 +7,21 @@ import os
 import copy
 import re
 
+# takes sim output and reverses the transformation to match original video
+def reverse_transform_point(x, R, p):
+    return R.dot(x + p) * [1, -1]
+def reverse_transformation(walls, points):
+    points = np.array(points)
+    p = copy.deepcopy(walls[0][1])
+    v = p - copy.deepcopy(walls[0][0])
+    theta = np.arctan2(v[1], v[0])
+    flipped = [[y, x] for x, y in points]
+
+    R = np.linalg.inv(np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]))
+    for point in flipped:
+        point[:] = reverse_transform_point(point, R, p)
+    return walls, flipped
+
 def test_transformation(walls, points):
     for wall in walls:
         plt.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], marker='o', color='b')
