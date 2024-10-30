@@ -3,7 +3,7 @@ import scipy
 import torch
 import cvxpy as cp
 from cvxpylayers.torch import CvxpyLayer
-from qpth.qp import QPFunction, QPSolvers, SpQPFunction
+#from qpth.qp import QPFunction, QPSolvers, SpQPFunction
 from torch.autograd import Variable
 # from lqp_py import box_qp_control
 # from lqp_py import SolveBoxQP
