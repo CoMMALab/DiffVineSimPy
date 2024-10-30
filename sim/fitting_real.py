@@ -225,7 +225,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
     # train_batch_size = truth_states.shape[0] - 1
     # FIXME I made the batch smaller for testing
-    train_batch_size = 90 # true_states.shape[0]
+    train_batch_size = true_states.shape[0]
 
     # Construct initial state
     init_headings = torch.full((train_batch_size, 1), fill_value = 0)
@@ -233,7 +233,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
     init_y = torch.full((train_batch_size, 1), 0.0)
 
     # Create empty pred_dstate so we can save it across iterations
-    _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
+    _, est_dstate = create_state_batched(train_batch_size, params.max_bodies)
 
     true_states = true_states[:train_batch_size]
     true_nbodies = true_nbodies[:train_batch_size]
@@ -257,18 +257,16 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         optimizer.zero_grad()
 
-        pred_dstate = pred_dstate.detach().clone()
         true_states = true_states.detach().clone()
         true_nbodies = true_nbodies.detach().clone()
         
+        # Estimate pred_dstate from the previous frame
+        est_dstate[0] = 0
+        est_dstate[1:] = true_states[1:] - true_states[:-1]
+        
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
-                true_states, pred_dstate, true_nbodies)
-
-        # Set the predicted velocity as the input to the next timestep
-        # pred_dstate[:, 1:] = pred_dstate[:, :-1]
-        # pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
-        pred_dstate[:] = 0
-
+                true_states, est_dstate, true_nbodies)
+                
         # Compute loss (note prediction for idx should be compared to truth at idx+1)
         distances = distance(pred_state[:-1], pred_bodies[:-1], true_states[1:], true_nbodies[1:])
 
@@ -409,28 +407,28 @@ if __name__ == '__main__':
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
         stiffness_mode = 'linear',
-        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+        stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
     # Initial guess values
     params.half_len = 5
-    params.radius = 10
+    params.radius = 7
     params.m = torch.tensor([0.002], dtype = torch.float32)
-    params.I = torch.tensor([5.0], dtype = torch.float32)
-    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    params.damping = torch.tensor(10.0, dtype = torch.float32)
+    params.I = torch.tensor([5.0], dtype = torch.float32) / 100
+    # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+    params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
     params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
 
     # Second guesses
     # params.half_len = 5
     # params.radius = 15
     # params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
-    # params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    # # params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+    # params.I = 2 * torch.tensor([5], dtype = torch.float32) / 100
+    # # params.stiffness = 0.5 * torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32) / 100
 
     # # Note to tuners setting this low cheats the loss function
-    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
     
     params.requires_grad_()
             

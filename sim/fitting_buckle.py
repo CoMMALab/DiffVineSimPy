@@ -440,7 +440,7 @@ if __name__ == '__main__':
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
         stiffness_mode = 'nonlinear',
-        stiffness_val = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32) 
+        stiffness_val = 0.5 * torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32) 
         )
 
     # Initial guess values
@@ -448,18 +448,18 @@ if __name__ == '__main__':
     # params.radius = 15.0 / 2 / ipm / 1000 * 0.05
     # params.m = torch.tensor([0.002], dtype = torch.float32)
     # params.I = torch.tensor([5], dtype = torch.float32)
-    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+    # params.stiffness = torch.tensor([30_000.0 /.0], dtype = torch.float32)
     # params.damping = torch.tensor([10.0], dtype = torch.float32)
-    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
     
     params.half_len = 3.0 / ipm / 1000 / 2
     params.radius = 15.0 / 2 / ipm / 1000 * 0.05
     params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
     params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+    params.damping = 2 * torch.tensor([10.0], dtype = torch.float32) / 100
     
     # Note to tuners setting this low cheats the loss function 
-    params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
     
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now

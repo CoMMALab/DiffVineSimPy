@@ -80,7 +80,7 @@ if __name__ == '__main__':
     params = VineParams(
         max_bodies = 10,
         obstacles = obstacles,
-        grow_rate = 8 * 10,
+        grow_rate = 8 * 10 / 1000,
         )
 
     params.m = torch.tensor([0.001], dtype = torch.float32, requires_grad = False)
