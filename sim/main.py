@@ -10,7 +10,7 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
 if __name__ == '__main__':
-    draw = False
+    draw = True
     ipm = 39.3701 / 1000   # inches per mm
     b1 = [5.5 / ipm, -5 / ipm, 4 / ipm, 7 / ipm]
     b2 = [4 / ipm, -17 / ipm, 7 / ipm, 5 / ipm]

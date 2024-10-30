@@ -7,39 +7,136 @@ import os
 import copy
 import re
 
+
 # takes sim output and reverses the transformation to match original video
+def output_irl():
+    folder = '../sim/sim_out/'
+    irlframes = ['0123', '0237', '0390', '0435', '0489']
+    first = 57
+    images = []    # List to store images with drawn points
+    final_pts = []
+    for frame in irlframes:
+        file = f'data/frames/viddemo/frame_{frame}.jpg'
+        img = cv2.imread(file)
+
+        # Process the frame number to get corresponding points file
+        outnum = (int(frame) - first) / 3
+        outnum = int(outnum / 1.27)
+        points = f'{folder}points{outnum}.npy'
+
+        # Load points and apply reverse transformation
+        outpts = reverse_transformation(np.load('data/frames/vid3/walls.npy'), np.load(points))
+        final_pts.append(outpts)
+        images.append(img)     # Add the processed image to the list
+    return final_pts, images
+
+
+def output_irl_drawer():
+    folder = '../sim/sim_out/'
+    irlframes = ['0123', '0237', '0390', '0435', '0489']
+    first = 57
+    images = []    # List to store images with drawn points
+
+    for frame in irlframes:
+        file = f'data/frames/viddemo/frame_{frame}.jpg'
+        img = cv2.imread(file)
+
+        # Process the frame number to get corresponding points file
+        outnum = (int(frame) - first) / 3
+        outnum = int(outnum / 1.27)
+        points = f'{folder}points{outnum}.npy'
+
+        # Load points and apply reverse transformation
+        outpts = reverse_transformation(np.load('data/frames/vid3/walls.npy'), np.load(points))
+
+        # Draw points on the image
+        for point in outpts:
+            cv2.circle(img, (int(point[0]), int(point[1])), 3, (0, 255, 0), -1)
+
+        images.append(img)     # Add the processed image to the list
+
+    # Display all images in separate windows
+    for i, image in enumerate(images):
+        cv2.imshow(f'Image {i + 1}', image)
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
 def output_drawer():
     folder = '../sim/sim_out/'
-    for i in range(350):
+    filename = '../sim/sim_out/points50.npy'
+    points = np.load(filename)
+    oldpoints = np.load('data/frames/vid3/points.npy')
+    fpsconversion = 1.27
+    #print(points)
+    #return
+    for i in range(200):
         filename = f'points{i}.npy'
         path = os.path.join(folder, filename)
         points = np.load(path)
+        #points = points.reshape(-1, 2)
         walls = np.load('./data/frames/vid3/walls.npy')
-        
+        points = reverse_transformation(walls, points)
+        #print(points)
+        for point in points:
+            plt.plot(point[0], point[1], 'go')
+        for wall in walls:
+            plt.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], marker = 'o', color = 'b')
+
+        oldind = int(i * fpsconversion)
+        if oldind < len(oldpoints):
+            oldframe = oldpoints[oldind]
+        else:
+            oldframe = oldpoints[len(oldpoints) - 1]
+            oldframe = oldframe[1:] * [1, -1]
+            oldframe = reverse_transformation(walls, oldframe)
+            for point in oldframe:
+                plt.plot(point[0], point[1], 'ro')
+            break
+        oldframe = oldframe[1:] * [1, -1]
+        oldframe = reverse_transformation(walls, oldframe)
+        for point in oldframe:
+            plt.plot(point[0], point[1], 'ro')
+        plt.grid(True)
+        plt.pause(0.01)
+        plt.clf()
+    plt.show()
+
+
 def reverse_transform_point(x, R, p):
-    return R.dot(x * [1, -1]) - p
+    #print(x)
+    return R.dot([x[0], x[1]]) + p
+
+
 def reverse_transformation(walls, points):
     points = np.array(points)
     p = copy.deepcopy(walls[0][1])
     v = p - copy.deepcopy(walls[0][0])
     theta = np.arctan2(v[1], v[0])
-    flipped = [[y, x] for x, y in points]
+    flipped = points
+    #flipped = [[y, x] for x, y in points]
 
     R = np.linalg.inv(np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]))
     for point in flipped:
         point[:] = reverse_transform_point(point, R, p)
-    return walls, flipped
+    return flipped
+
 
 def test_transformation(walls, points):
     for wall in walls:
-        plt.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], marker='o', color='b')
+        plt.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], marker = 'o', color = 'b')
     for point in points:
         plt.plot(point[0], point[1], 'go')
     plt.grid(True)
     plt.show()
+
+
 def transform_point(x, R, p):
     #return x-p
     return R.dot(x - p) * [1, -1]
+
+
 def transform_vine_base(walls, points):
     #walls = np.array(walls)
     points = np.array(points)
@@ -83,14 +180,15 @@ def find_nearest(binary_array, start):
                 if 0 <= nx < rows and 0 <= ny < cols and (nx, ny) not in visited:
                     visited.add((nx, ny))
                     # Calculate Euclidean distance from the start point
-                    new_dist = np.sqrt((nx - start_x) ** 2 + (ny - start_y) ** 2)
+                    new_dist = np.sqrt((nx - start_x)**2 + (ny - start_y)**2)
                     heapq.heappush(priority_queue, (new_dist, nx, ny))
 
     return None
 
+
 def travel(binary_array, start):
     rows, cols = len(binary_array), len(binary_array[0])
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]  # 8 possible moves
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)] # 8 possible moves
     current_pos = start
     prev_pos = None
     visited = []
@@ -98,10 +196,10 @@ def travel(binary_array, start):
     while True:
         visited.append(current_pos)
         x, y = current_pos
-        #print(f"Visiting: ({x}, {y})")
+                                                                                        #print(f"Visiting: ({x}, {y})")
         count_ones = 0
         potential_moves = []
-        
+
         # Examine all neighbors within the 3x3 kernel
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
@@ -109,7 +207,7 @@ def travel(binary_array, start):
                 count_ones += 1
                 neighbor_pos = (nx, ny)
                 potential_moves.append(neighbor_pos)
-        
+
         # Check termination and move conditions
         if count_ones == 0:
             #print("Stopping: No further moves possible or only self is 1.")
@@ -123,7 +221,7 @@ def travel(binary_array, start):
         elif count_ones == 2 and prev_pos is None:
             #print("Stopping: Reached a split with multiple new moves.")
             break
-        elif count_ones >2:
+        elif count_ones > 2:
             #print("Stopping: Reached a split with multiple new moves.")
             break
         elif count_ones == 2 and prev_pos is not None:
@@ -139,6 +237,7 @@ def travel(binary_array, start):
             distance += 1
 
     return current_pos, visited, distance
+
 
 def find_midpoints(line, split, n):
     distance = 0
@@ -158,6 +257,8 @@ def find_midpoints(line, split, n):
                 break
         prev_pos = current_pos
     return points
+
+
 def find_points(img, walls, n):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, img = cv2.threshold(img, 128, 1, cv2.THRESH_BINARY)
@@ -167,28 +268,29 @@ def find_points(img, walls, n):
         return []
     end, line, dist = travel(img, start)
     return line
-    split = dist/(n-1) # n-1 segments given n points including endpoints
-    midpoints = find_midpoints(line, split, n-2)
+    split = dist / (n - 1)     # n-1 segments given n points including endpoints
+    midpoints = find_midpoints(line, split, n - 2)
     img = (img * 255).astype(np.uint8)
-    #_, img = cv2.threshold(img, 256, 1, cv2.THRESH_BINARY)
+                               #_, img = cv2.threshold(img, 256, 1, cv2.THRESH_BINARY)
     img[start[0]][start[1]] = 128
     img[end[0]][end[1]] = 128
     for point in midpoints:
         img[point[0]][point[1]] = 128
-    #classifier.display_large(img)
+                               #classifier.display_large(img)
     midpoints.insert(0, start)
     midpoints.append(end)
     return midpoints
-    
+
+
 def collection(folder):
     wall_og = np.load(os.path.join(folder, 'walls.npy'))
     data = []
-    #min_frame = 
+    #min_frame =
     max_frame = 580
     past_length = 0
     for entry in os.listdir(folder):
-    # Construct full file path
-        if entry == 'frame_ref.jpg' or entry == 'walls.npy' or entry == 'points.npy' or entry=='tf_walls.npy':
+        # Construct full file path
+        if entry == 'frame_ref.jpg' or entry == 'walls.npy' or entry == 'points.npy' or entry == 'tf_walls.npy':
             continue
         match = re.search(r'frame_(\d+)\.jpg', entry)
         if match:
@@ -209,28 +311,31 @@ def collection(folder):
     max_len = max(len(sublist) for sublist in data)
 
     # Pad sublists with a specified tuple (e.g., (0, 0)) and convert to array
-    padded_arrays = np.array([
-    [(len(sublist),0)] + sublist + [(0, 0)] * (max_len - len(sublist))
-    for sublist in data])
+    padded_arrays = np.array(
+        [[(len(sublist), 0)] + sublist + [(0, 0)] * (max_len - len(sublist)) for sublist in data]
+        )
     np.save(os.path.join(folder, 'points.npy'), padded_arrays)
     tf_walls, _ = transform_vine_base(walls, [])
     np.save(os.path.join(folder, 'tf_walls.npy'), tf_walls)
 
 
 def main():
-    folder = './data/frames/vid6/'
-    collection(folder)
+    #folder = './data/frames/vid6/'
+    #collection(folder)
     img_path = './data/frames/vid3/frame_0477.jpg'
-    wall_path = './data/frames/vid3/walls.npy'
-    walls = np.load(wall_path)
-    img = cv2.imread(img_path)
-    output_drawer()
+    #wall_path = './data/frames/vid3/walls.npy'
+    #walls = np.load(wall_path)
+    #img = cv2.imread(img_path)
+    #output_drawer()
+    #output_irl_drawer()
+    output_irl()
     #print(img.shape)
     #points = find_points(img, walls, 10)
     #print(walls, points)
     #walls, points = transform_vine_base(walls, points)
     #print(walls, points)
     #test_transformation(walls, points)
+
 
 if __name__ == '__main__':
     main()
