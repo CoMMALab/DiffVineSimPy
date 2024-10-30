@@ -1,15 +1,8 @@
-[submodule "osqpth"]
-	path = osqpth
-	url = https://github.com/osqp/osqpth
-[submodule "scqpth"]
-	path = scqpth
-	url = https://github.com/ipo-lab/scqpth/
-[submodule "lqp_py"]
-	path = lqp_py
-	url = https://github.com/ipo-lab/lqp_py
-[submodule "pytorch-sqrtm"]
-	path = pytorch-sqrtm
-	url = https://github.com/steveli/pytorch-sqrtm
+
 [submodule "cvxpylayers"]
 	path = cvxpylayers
 	url = https://github.com/Reschivon/cvxpylayers
+[submodule "diffcp"]
+	path = diffcp
+	url = https://github.com/Reschivon/diffcp
+	branch = myedits

@@ -43,9 +43,9 @@ if __name__ == '__main__':
     params = VineParams(
         max_bodies,
         obstacles = obstacles,
-        grow_rate = 150,
+        grow_rate = 150 / 1000,
         stiffness_mode='linear',
-        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0]) 
+        stiffness_val = torch.tensor([30_000.0 / 100_000.0]) 
         )
         
     assert params.stiffness_val.dtype == torch.float32

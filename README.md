@@ -7,7 +7,9 @@ This work is based on https://github.com/charm-lab/Vine_Simulator.
 Also uses [sqrtm](https://github.com/steveli/pytorch-sqrtm)
 
 ## Install
-Make sure you have torch and cvxpylayers in your python environment.
+Make sure you have torch in your python environment.
+
+Install `cvxpylayers` and `diffcp` from the submodules. Run `git submodule update --init` if you haven't already cloned submodules 
 
 Also get `plotly`. pyplot won't play nice trying to generate a figure invisibly
 

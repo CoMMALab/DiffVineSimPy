@@ -8,7 +8,7 @@ from sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
 
 from matplotlib import pyplot as plt
-from sim.render import draw_batched, vis_init
+from sim.render import draw_batched, log_stiffness_func, vis_init
 from torch.utils.tensorboard import SummaryWriter
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
@@ -225,7 +225,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
     # train_batch_size = truth_states.shape[0] - 1
     # FIXME I made the batch smaller for testing
-    train_batch_size = 90 # true_states.shape[0]
+    train_batch_size = true_states.shape[0]
 
     # Construct initial state
     init_headings = torch.full((train_batch_size, 1), fill_value = 0)
@@ -233,7 +233,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
     init_y = torch.full((train_batch_size, 1), 0.0)
 
     # Create empty pred_dstate so we can save it across iterations
-    _, pred_dstate = create_state_batched(train_batch_size, params.max_bodies)
+    _, est_dstate = create_state_batched(train_batch_size, params.max_bodies)
 
     true_states = true_states[:train_batch_size]
     true_nbodies = true_nbodies[:train_batch_size]
@@ -257,18 +257,16 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         optimizer.zero_grad()
 
-        pred_dstate = pred_dstate.detach().clone()
         true_states = true_states.detach().clone()
         true_nbodies = true_nbodies.detach().clone()
         
+        # Estimate pred_dstate from the previous frame
+        est_dstate[0] = 0
+        est_dstate[1:] = true_states[1:] - true_states[:-1]
+        
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
-                true_states, pred_dstate, true_nbodies)
-
-        # Set the predicted velocity as the input to the next timestep
-        # pred_dstate[:, 1:] = pred_dstate[:, :-1]
-        # pred_dstate[:, 0] = 0  # Time=0 has 0 velocity by definition
-        pred_dstate[:] = 0
-
+                true_states, est_dstate, true_nbodies)
+                
         # Compute loss (note prediction for idx should be compared to truth at idx+1)
         distances = distance(pred_state[:-1], pred_bodies[:-1], true_states[1:], true_nbodies[1:])
 
@@ -287,7 +285,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
-        torch.nn.utils.clip_grad_norm_(params.opt_params(), max_norm = 1e-2, norm_type = 2)
+        torch.nn.utils.clip_grad_norm_(params.opt_params()[0]['params'], max_norm = 1e-2, norm_type = 2)
 
         # Debug see if grads are reasonable
         print(f"{'Parameter':<15}{'Value':<20}{'Gradient':<20}")
@@ -321,6 +319,9 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
         if params.stiffness_mode == 'linear':
             writer.add_scalar('Gradients/Stiffness_grad', params.stiffness_val.grad.item(), iter)
 
+        # Call the helper function to log stiffness_func details
+        log_stiffness_func(writer, params.stiffness_func, iter)
+        
         optimizer.step()
 
         # Every step, we'll visualize a different batch item
@@ -348,6 +349,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         plt.xlim([0, 400])
         plt.ylim([-200, 200])
+        plt.gcf().set_size_inches(10, 10)
         plt.title(f'Comparing truth (green) and pred (blue) for t = {idx_to_view}')
         plt.pause(0.001)
         # plt.show()
@@ -408,35 +410,35 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'linear',
-        stiffness_val = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
+        stiffness_mode = 'nonlinear',
+        stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         )
 
     # Initial guess values
     params.half_len = 5
-    params.radius = 10
+    params.radius = 7
     params.m = torch.tensor([0.002], dtype = torch.float32)
-    params.I = torch.tensor([5.0], dtype = torch.float32)
-    # params.stiffness = torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    params.damping = torch.tensor(10.0, dtype = torch.float32)
+    params.I = torch.tensor([5.0], dtype = torch.float32) / 100
+    # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+    params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
     params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
 
     # Second guesses
     # params.half_len = 5
     # params.radius = 15
     # params.m = 2 * torch.tensor([0.002], dtype = torch.float32)
-    # params.I = 2 * torch.tensor([5], dtype = torch.float32)
-    # # params.stiffness = 0.5 * torch.tensor([30_000.0 / 1_000_000.0], dtype = torch.float32)
-    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32)
+    # params.I = 2 * torch.tensor([5], dtype = torch.float32) / 100
+    # # params.stiffness = 0.5 * torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+    # params.damping = 2 * torch.tensor([10.0], dtype = torch.float32) / 100
 
     # # Note to tuners setting this low cheats the loss function
-    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32)
+    # params.grow_rate = torch.tensor([100.0 / ipm / 1000], dtype = torch.float32) / 1000
     
     params.requires_grad_()
             
     # FIXME Not sure if adam is working for or against us, but everything is tuned with this set up
     # so we'll stick with it for now
-    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95), weight_decay = 0)
+    optimizer = torch.optim.AdamW(params.opt_params(), lr = 1e-3, betas = (0.8, 0.95))
     # optimizer = torch.optim.LBFGS(optimizer_params, lr = 1e-4, max_iter = 20, history_size = 10, line_search_fn = 'strong_wolfe')
     # optimizer = torch.optim.SGD(optimizer_params, lr = 1e-4, weight_decay = 0)
 

@@ -1,6 +1,11 @@
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
+import plotly.graph_objects as go
+from PIL import Image
+import torchvision
+import io
+
 from .vine import StateTensor, VineParams
 
 import signal
@@ -94,3 +99,48 @@ def draw_batched(params: VineParams, state, bodies, lims=False, clear=True, obst
     #         # Contact point
     #         # main_ax.arrow(x, y, contact[0] - x, contact[1] - y)
     #         pass
+
+
+stiff_fig, stiff_ax = plt.subplots()
+
+def log_stiffness_func(writer, stiffness_func, iter):
+    """
+    Logs the weights, biases, gradients, and output plot of stiffness_func to TensorBoard.
+
+    Args:
+        writer (SummaryWriter): TensorBoard writer instance.
+        stiffness_func (torch.nn.Module): Stiffness function model.
+        iter (int): Current iteration step for logging.
+    """
+    
+    # Log weights, biases, and gradients for each layer in stiffness_func
+    for i, layer in enumerate(stiffness_func):
+        if isinstance(layer, torch.nn.Linear):
+            # Log weights and biases
+            writer.add_histogram(f'Stiffness_func/layer_{i}_weights', layer.weight, iter)
+            writer.add_histogram(f'Stiffness_func/layer_{i}_biases', layer.bias, iter)
+
+            # Log gradients if they exist
+            if layer.weight.grad is not None:
+                writer.add_histogram(f'Stiffness_func/layer_{i}_weights_grad', layer.weight.grad, iter)
+            if layer.bias.grad is not None:
+                writer.add_histogram(f'Stiffness_func/layer_{i}_biases_grad', layer.bias.grad, iter)
+
+    # Generate output plot for stiffness_func from inputs -1.5 to 1.5
+    inputs = torch.arange(0, 1.6, 0.1).unsqueeze(1)  # Shape [N, 1]
+    with torch.no_grad():
+        outputs = stiffness_func(inputs).squeeze()  # Shape [N]
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=inputs.numpy().flatten(), y=outputs.numpy(), mode='lines', name='Stiffness Output'))
+    fig.update_layout(title="Stiffness Function Output", xaxis_title="Input", yaxis_title="Output")
+
+    #convert a Plotly fig to  a RGBA-array
+    fig_bytes = fig.to_image(format="png")
+    buf = io.BytesIO(fig_bytes)
+    img = torchvision.transforms.functional.pil_to_tensor(Image.open(buf))
+
+    # Log the image to TensorBoard
+    writer.add_image("Stiffness_func/output_plot", img, iter)
+    
