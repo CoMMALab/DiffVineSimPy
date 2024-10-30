@@ -49,6 +49,9 @@ def init_layers(sol_size, Q_size, p_size, G_size, h_size, A_size, b_size, vel_ca
 
 sqrtm_module = MatrixSquareRoot()
 
+def reset_layers():
+    global cvxpylayer
+    cvxpylayer = None
 
 def solve_layers(Q, p, G, h, A, b):
     '''
@@ -62,12 +65,12 @@ def solve_layers(Q, p, G, h, A, b):
     batch_size = p.shape[0]
     Q_batched = sqrtm_module.apply(Q).unsqueeze(0).expand(batch_size, -1, -1)
 
-    solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10_000}
+    solver_args_scs = {'acceleration_lookback': 100_000_000, 'verbose': False, 'max_iters': 10_000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
         
     solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args = solver_args_scs)
 
-    return solution[0]
+    return solution[0].clamp(-100, 100)
 
 
 def solve_cvxpy(Q, p, G, h, A, b, **solver_kwargs):
