@@ -13,3 +13,6 @@
 [submodule "cvxpylayers"]
 	path = cvxpylayers
 	url = https://github.com/Reschivon/cvxpylayers
+[submodule "diffcp"]
+	path = diffcp
+	url = https://github.com/Reschivon/diffcp
