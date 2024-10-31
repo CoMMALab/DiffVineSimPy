@@ -282,7 +282,8 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
         params.damping.grad *= 1e6
         if params.stiffness_mode == 'linear':
             params.stiffness_val.grad *= 0.1
-
+        if params.stiffness_mode == 'real':
+            params.sicheng.grad *= 3e11
         # Clip gradients, FIXME sometimes the grads explode for no reason
         # Set a bit conservative, so worst case it takes a bit longer but won't explode
         torch.nn.utils.clip_grad_norm_(params.opt_params()[0]['params'], max_norm = 1e-2, norm_type = 2)
