@@ -2,7 +2,8 @@ from sim.solver import *
 from .vine import *
 from .render import *
 from typing import Callable
-from .fitting_real import read_yitian
+from .fitting_real import read_yitian, distance
+import pandas as pd
 
 torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 # torch.autograd.set_detect_anomaly(True)
@@ -10,7 +11,7 @@ torch.set_printoptions(profile = 'full', linewidth = 900, precision = 2)
 import time
 
 if __name__ == '__main__':
-    draw = True
+    draw = False
     ipm = 39.3701 / 1000   # inches per mm
     b1 = [5.5 / ipm, -5 / ipm, 4 / ipm, 7 / ipm]
     b2 = [4 / ipm, -17 / ipm, 7 / ipm, 5 / ipm]
@@ -28,7 +29,7 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
 
-    max_bodies = 100
+    max_bodies = 70
     init_bodies = 2
     batch_size = 1
     
@@ -45,7 +46,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'nonlinear',
+        stiffness_mode = 'linear',
         stiffness_val = torch.tensor([0.00000002046], dtype = torch.float32)
         )
 
@@ -67,12 +68,6 @@ if __name__ == '__main__':
         params.damping = torch.tensor(.18, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
     elif params.stiffness_mode == 'linear':
-        # params.m = torch.tensor([0.002])
-        # params.I = torch.tensor([5.0]) / 100
-        # params.stiffness = torch.tensor([30_000.0 / 100_000], dtype = torch.float32)
-        # params.damping = torch.tensor(10.0) / 100
-        # params.grow_rate = torch.tensor(100.0 / ipm / 1000) / 100
-        
         params.m = torch.tensor([0.0051 ], dtype = torch.float32)
         params.I = torch.tensor([ 0.2057 ], dtype = torch.float32)
         params.stiffness_val = torch.tensor([ 0.2883 ], dtype = torch.float32)
@@ -111,7 +106,9 @@ if __name__ == '__main__':
     # Convert the obstacles to segments in a form we can use later
     params.obstacles = None
     params.segments = torch.concat((scene[:, 0, :], scene[:, 1, :]), axis = 1)
-    for frame in range(1000):
+    losses = []
+    ratio = 0.6
+    for frame in range(10000):
         start = time.time()
 
         bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
@@ -129,23 +126,40 @@ if __name__ == '__main__':
             total_time += time.time() - start
             total_frames += 1
             print(f'Time per frame{frame}: ', total_time / total_frames)
-
-        if frame % 5 == 0:
+        start = 8
+        if int(frame % ratio) == 0:
             if draw:
                 draw_batched(params, state, bodies, c='blue')
+                truth_ind = int((frame-start)/ratio)
+                if truth_ind >= 0:
+                    leng = int(truth_bodies[truth_ind].item())
+                    true_state = truth_states[truth_ind]
+                    for i in range(leng):
+                        plt.plot(true_state[i*3], true_state[i*3+1], 'ro')
+                print(truth_ind)
+                
                 plt.gcf().set_size_inches(10, 10)
                 plt.pause(0.001)
                 
-        if not draw:
-            n = bodies[0].item()
-            points = state[0, :n * 3]  # Limit to the first j groups
-            points = points.view(-1, 3)[:, :2]  # Reshape and take only x and y
-            pointsnp = points.numpy()
-            np.save('sim/sim_out_nonlinear/points' + str(frame) + '.npy', pointsnp)
+            if not draw:
+                truth_ind = int((frame-start)/ratio)
+                print(truth_ind)
+                if truth_ind >= 204:
+                    break
+                if truth_ind >= 0:
+                    leng = int(truth_bodies[truth_ind].item())
+                    true_state = truth_states[truth_ind:truth_ind+1]
+                    true_body = truth_bodies[truth_ind:truth_ind+1]
+                    loss = distance(state, bodies, true_state, true_body)
+                    losses.append(loss.item() ** 2)
 
         if torch.any(bodies >= params.max_bodies):
             raise Exception('At least one instance has reached the max body count.')
 
         print('===========step end============\n\n')
-
+    if not draw:
+        df = pd.DataFrame(losses)
+        df.to_csv('mse_linear.csv')
+        plt.plot(range(len(losses)), losses)
+        plt.grid(True)
     plt.show()
