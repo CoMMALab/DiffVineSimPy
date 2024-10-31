@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import copy
 import re
+from PIL import Image
 
 
 # takes sim output and reverses the transformation to match original video
@@ -328,7 +329,15 @@ def main():
     #img = cv2.imread(img_path)
     #output_drawer()
     #output_irl_drawer()
-    output_irl()
+    pts, images = output_irl()
+    for i, (image, pt) in enumerate(zip(images, pts)):
+        pt = pt.astype(np.int32)
+        print(pt)
+        cv2.polylines(image, [pt], False, (0, 255, 255), thickness = 3)
+        im = Image.fromarray(image[...,::-1])
+        im.save(f'i{i}.png')
+        print(pt)
+
     #print(img.shape)
     #points = find_points(img, walls, 10)
     #print(walls, points)
