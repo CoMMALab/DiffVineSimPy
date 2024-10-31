@@ -130,14 +130,15 @@ if __name__ == '__main__':
                     true_state = truth_states[truth_ind]
                     for i in range(leng):
                         plt.plot(true_state[i*3], true_state[i*3+1], 'ro')
-                #print(leng)
+                print(truth_ind)
                 
                 plt.gcf().set_size_inches(10, 10)
                 plt.pause(0.001)
                 
             if not draw:
-                truth_ind = int(frame-start/ratio)
-                if truth_ind >= len(truth_bodies):
+                truth_ind = int((frame-start)/ratio)
+                print(truth_ind)
+                if truth_ind >= 204:
                     break
                 if truth_ind >= 0:
                     leng = int(truth_bodies[truth_ind].item())
