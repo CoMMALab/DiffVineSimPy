@@ -28,7 +28,7 @@ if __name__ == '__main__':
         obstacles[i][2] = obstacles[i][0] + obstacles[i][2]
         obstacles[i][3] = obstacles[i][1] + obstacles[i][3]
 
-    max_bodies = 70
+    max_bodies = 100
     init_bodies = 2
     batch_size = 1
     
@@ -45,7 +45,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'real',
+        stiffness_mode = 'nonlinear',
         stiffness_val = torch.tensor([0.00000002046], dtype = torch.float32)
         )
 
@@ -66,6 +66,18 @@ if __name__ == '__main__':
         # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         params.damping = torch.tensor(.18, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+    elif params.stiffness_mode == 'linear':
+        # params.m = torch.tensor([0.002])
+        # params.I = torch.tensor([5.0]) / 100
+        # params.stiffness = torch.tensor([30_000.0 / 100_000], dtype = torch.float32)
+        # params.damping = torch.tensor(10.0) / 100
+        # params.grow_rate = torch.tensor(100.0 / ipm / 1000) / 100
+        
+        params.m = torch.tensor([0.0051 ], dtype = torch.float32)
+        params.I = torch.tensor([ 0.2057 ], dtype = torch.float32)
+        params.stiffness_val = torch.tensor([ 0.2883 ], dtype = torch.float32)
+        params.damping = torch.tensor( 0.0001, dtype = torch.float32)
+        params.grow_rate = torch.tensor( 0.1912, dtype = torch.float32)
     
     # Load MLP from weights
     print('Loading MLP weights from models/model_360_good.pt')
@@ -94,12 +106,12 @@ if __name__ == '__main__':
     # Measure time per frame
     total_time = 0
     total_frames = 0
-    truth_states, truth_bodies, scene = read_yitian(3)
+    truth_states, truth_bodies, scene = read_yitian(5)
 
     # Convert the obstacles to segments in a form we can use later
     params.obstacles = None
     params.segments = torch.concat((scene[:, 0, :], scene[:, 1, :]), axis = 1)
-    for frame in range(100000):
+    for frame in range(1000):
         start = time.time()
 
         bodies, forces, growth, sdf_now, deviation_now, L, J, growth_wrt_state, growth_wrt_dstate \
@@ -129,7 +141,7 @@ if __name__ == '__main__':
             points = state[0, :n * 3]  # Limit to the first j groups
             points = points.view(-1, 3)[:, :2]  # Reshape and take only x and y
             pointsnp = points.numpy()
-            np.save('sim/sim_out2/points' + str(frame) + '.npy', pointsnp)
+            np.save('sim/sim_out_nonlinear/points' + str(frame) + '.npy', pointsnp)
 
         if torch.any(bodies >= params.max_bodies):
             raise Exception('At least one instance has reached the max body count.')

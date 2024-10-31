@@ -430,22 +430,28 @@ if __name__ == '__main__':
     if params.stiffness_mode == 'real':
         params.m = torch.tensor([0.002], dtype = torch.float32)
         params.I = torch.tensor([5.0], dtype = torch.float32) / 100
-        # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        # params.stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         params.damping = torch.tensor(10.0, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(100.0 / 1000, dtype = torch.float32)
         params.sicheng = torch.tensor(10_000, dtype = torch.float32)
         params.sicheng2 = torch.tensor(1 / 160_000, dtype = torch.float32)
-        params.dt = 1/30
     elif params.stiffness_mode == 'linear':
-        params.m = torch.tensor([0.000313], dtype = torch.float32)
+        params.m = torch.tensor([0.002], dtype = torch.float32)
         params.I = torch.tensor([0.1691], dtype = torch.float32)
-        params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        params.stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         params.damping = torch.tensor(.18, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+        
+        # params.m = torch.tensor([0.0007], dtype = torch.float32)
+        # params.I = torch.tensor([0.1544 ], dtype = torch.float32)
+        # params.stiffness_val = torch.tensor([0.2954], dtype = torch.float32)
+        # params.damping = torch.tensor(0.0119 , dtype = torch.float32)
+        # params.grow_rate = torch.tensor(0.1718 , dtype = torch.float32)
+        
     elif params.stiffness_mode == 'nonlinear':
         params.m = torch.tensor([0.000313], dtype = torch.float32)
         params.I = torch.tensor([0.1691], dtype = torch.float32)
-        # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
+        # params.stiffness_val = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         params.damping = torch.tensor(.18, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
 
