@@ -560,7 +560,7 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     
     # Symmetric function, take abs of input
     if params.stiffness_mode == 'nonlinear':
-        stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
+        stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()/10
     elif params.stiffness_mode == 'linear':
         stiffness_response = params.stiffness_val.abs() * theta_rel 
     elif params.stiffness_mode == 'real':
