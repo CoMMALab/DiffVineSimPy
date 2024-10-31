@@ -30,9 +30,36 @@ def output_irl():
         images.append(img)     # Add the processed image to the list
     return final_pts, images
 
+def output_manual():
+    folder = '../sim/sim_out2/'
+    irlframes = ['0123', '0237', '0390', '0435', '0489']
+    outframes = [169, 461, 840, 940, 1157]
+    first = 57
+    images = []    # List to store images with drawn points
 
+    for i, frame in enumerate(irlframes):
+        file = f'data/frames/viddemo/frame_{frame}.jpg'
+        img = cv2.imread(file)
+        points = f'{folder}points{outframes[i]}.npy'
+
+        # Load points and apply reverse transformation
+        outpts = reverse_transformation(np.load('data/frames/vid3/walls.npy'), np.load(points))
+
+        # Draw points on the image
+        for point in outpts:
+            cv2.circle(img, (int(point[0]), int(point[1])), 3, (0, 255, 0), -1)
+
+        images.append(img)     # Add the processed image to the list
+
+    # Display all images in separate windows
+    for i, image in enumerate(images):
+        cv2.imshow(f'Image {i + 1}', image)
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
 def output_irl_drawer():
-    folder = '../sim/sim_out/'
+    folder = '../sim/sim_out2/'
     irlframes = ['0123', '0237', '0390', '0435', '0489']
     first = 57
     images = []    # List to store images with drawn points
@@ -43,7 +70,11 @@ def output_irl_drawer():
 
         # Process the frame number to get corresponding points file
         outnum = (int(frame) - first) / 3
-        outnum = int(outnum / 1.27)
+        # for mpl it is 1
+        # .27
+        conversion = 0.13
+        outnum = int(outnum / conversion)
+        print(outnum)
         points = f'{folder}points{outnum}.npy'
 
         # Load points and apply reverse transformation
@@ -64,11 +95,11 @@ def output_irl_drawer():
 
 
 def output_drawer():
-    folder = '../sim/sim_out/'
-    filename = '../sim/sim_out/points50.npy'
-    points = np.load(filename)
+    folder = '../sim/sim_out2/'
+    #filename = '../sim/sim_out/points50.npy'
+    #points = np.load(filename)
     oldpoints = np.load('data/frames/vid3/points.npy')
-    fpsconversion = 1.27
+    fpsconversion = 0.15
     #print(points)
     #return
     for i in range(200):
@@ -99,7 +130,7 @@ def output_drawer():
         for point in oldframe:
             plt.plot(point[0], point[1], 'ro')
         plt.grid(True)
-        plt.pause(0.01)
+        plt.pause(0.0001)
         plt.clf()
     plt.show()
 
@@ -328,7 +359,8 @@ def main():
     #img = cv2.imread(img_path)
     #output_drawer()
     #output_irl_drawer()
-    output_irl()
+    output_manual()
+    #output_irl()
     #print(img.shape)
     #points = find_points(img, walls, 10)
     #print(walls, points)

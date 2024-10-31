@@ -64,10 +64,30 @@ def solve_layers(Q, p, G, h, A, b):
 
     solver_args_scs = {'acceleration_lookback': 40_000, 'verbose': False, 'max_iters': 10_000}
     # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
-        
+
     solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args = solver_args_scs)
 
     return solution[0]
+
+
+def solve_layers_new(Q, p, G, h, A, b):
+    '''
+    Batched QP solve, internally uses cvxpylayers
+    '''
+    global cvxpylayer
+
+    # solver_args = {'ignore_dpp': True, 'max_iters': 100000}
+    # Args to SCS, not cvxpy!
+
+    batch_size = p.shape[0]
+    Q_batched = sqrtm_module.apply(Q).unsqueeze(0).expand(batch_size, -1, -1)
+
+    solver_args_scs = {'acceleration_lookback': 10_000_000, 'verbose': False, 'max_iters': 10_000}
+    # solver_args_ecos = {'abstol': 1e-9, 'reltol': 1e-9, 'feastol': 1e-9, 'max_iters': 1000}
+
+    solution = cvxpylayer(Q_batched, p, G, h, A, b, solver_args = solver_args_scs)
+
+    return solution[0].clamp(-50, 50)
 
 
 def solve_cvxpy(Q, p, G, h, A, b, **solver_kwargs):
