@@ -322,7 +322,7 @@ def extract_frames(video_path, output_folder, outfold=None):
             break  # Break the loop if there are no frames left
 
         # if video is flipped, uncomment this
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        # frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         if mod:
             frame5, _ = four_point_transform(frame, bound)
