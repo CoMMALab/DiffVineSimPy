@@ -46,7 +46,7 @@ if __name__ == '__main__':
         max_bodies = max_bodies,
         obstacles = [[0, 0, 0, 0]],
         grow_rate = -1,
-        stiffness_mode = 'real',
+        stiffness_mode = 'linear',
         stiffness_val = torch.tensor([0.00000002046], dtype = torch.float32)
         )
 
@@ -67,6 +67,12 @@ if __name__ == '__main__':
         # params.stiffness = torch.tensor([30_000.0 / 100_000.0], dtype = torch.float32)
         params.damping = torch.tensor(.18, dtype = torch.float32) / 100
         params.grow_rate = torch.tensor(0.1647, dtype = torch.float32)
+    elif params.stiffness_mode == 'linear':
+        params.m = torch.tensor([0.0051 ], dtype = torch.float32)
+        params.I = torch.tensor([ 0.2057 ], dtype = torch.float32)
+        params.stiffness_val = torch.tensor([ 0.2883 ], dtype = torch.float32)
+        params.damping = torch.tensor( 0.0001, dtype = torch.float32)
+        params.grow_rate = torch.tensor( 0.1912, dtype = torch.float32)
     
     # Load MLP from weights
     print('Loading MLP weights from models/model_360_good.pt')
@@ -101,7 +107,7 @@ if __name__ == '__main__':
     params.obstacles = None
     params.segments = torch.concat((scene[:, 0, :], scene[:, 1, :]), axis = 1)
     losses = []
-    ratio = 6.3
+    ratio = 0.6
     for frame in range(10000):
         start = time.time()
 
@@ -120,7 +126,7 @@ if __name__ == '__main__':
             total_time += time.time() - start
             total_frames += 1
             print(f'Time per frame{frame}: ', total_time / total_frames)
-        start = 40
+        start = 8
         if int(frame % ratio) == 0:
             if draw:
                 draw_batched(params, state, bodies, c='blue')
@@ -153,7 +159,7 @@ if __name__ == '__main__':
         print('===========step end============\n\n')
     if not draw:
         df = pd.DataFrame(losses)
-        df.to_csv('mse_real.csv')
+        df.to_csv('mse_linear.csv')
         plt.plot(range(len(losses)), losses)
         plt.grid(True)
     plt.show()
