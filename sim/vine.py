@@ -562,7 +562,7 @@ def bending_energy(params: VineParams, theta_rel, dtheta_rel, bodies):
     if params.stiffness_mode == 'nonlinear':
         stiffness_response = params.stiffness_func(theta_rel.abs().unsqueeze(-1)).squeeze()
     elif params.stiffness_mode == 'linear':
-        stiffness_response = params.stiffness_val.abs() * theta_rel 
+        stiffness_response = params.stiffness_val.abs() * theta_rel.abs()
     elif params.stiffness_mode == 'real':
         stiffness_response = predict_moment(params, torch.abs(theta_rel)) * 0.0002
     zero_out_custom(stiffness_response, bodies)
