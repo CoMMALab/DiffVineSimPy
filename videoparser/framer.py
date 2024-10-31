@@ -2,9 +2,9 @@ import cv2
 import os
 import shutil
 import numpy as np
-from sklearn.cluster import KMeans
-import classifier
-from skimage.morphology import skeletonize
+#from sklearn.cluster import KMeans
+#import classifier
+#from skimage.morphology import skeletonize
 
 def click_event(event, x, y, flags, param):
     frame = param['frame']
@@ -322,7 +322,7 @@ def extract_frames(video_path, output_folder, outfold=None):
             break  # Break the loop if there are no frames left
 
         # if video is flipped, uncomment this
-        #frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         if mod:
             frame5, _ = four_point_transform(frame, bound)
@@ -330,14 +330,14 @@ def extract_frames(video_path, output_folder, outfold=None):
                 ref = False
                 reference_frame = frame
             else:
-                frame = pixdiffref(reference_frame, frame)
+                frame1 = pixdiffref(reference_frame, frame)
                 #frame = pixwhite(reference_frame, frame)
-                frame = cv2.medianBlur(frame, 11)
+                frame1 = cv2.medianBlur(frame, 11)
                 kernel = np.ones((11, 11), np.uint8)
                 _, binary = cv2.threshold(frame, 127, 255, cv2.THRESH_BINARY)
                 closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-                frame = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
-                frame = skel(frame)
+                frame1 = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
+                #frame1 = skel(frame)
         # Save the frame as an image
         if counter == framerate:
             if frame_count == 5*framerate:
@@ -365,8 +365,8 @@ def extract_frames(video_path, output_folder, outfold=None):
 
 # Usage
 def main():
-    video_path = './data/videos/vid3.mp4'
-    output_folder1 = './data/frames/viddemo'
+    video_path = './data/videos/vid5.mp4'
+    output_folder1 = './data/frames/viddemo2'
     output_folder2 = './data/frames/vid01'
     #extract_frames(video_path, output_folder1, output_folder2)
     extract_frames(video_path, output_folder1)
