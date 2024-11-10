@@ -4,7 +4,7 @@ import torch
 
 from sim.read_yitian import read_yitian
 from sim.vine import StateTensor, VineParams, create_state_batched, forward_batched_part, forward, generate_segments_from_rectangles, init_state_batched, zero_out, zero_out_custom
-from sim_results import load_vine_robot_csv
+from simulated_data.sim_results import load_vine_robot_csv
 from sim.solver import sqrtm_module
 
 from matplotlib import pyplot as plt

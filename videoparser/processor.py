@@ -11,7 +11,7 @@ from PIL import Image
 
 # takes sim output and reverses the transformation to match original video
 def output_irl():
-    folder = '../sim/sim_out/'
+    folder = '../sim/sim_out3/'
     irlframes = ['0123', '0237', '0390', '0435', '0489']
     first = 57
     images = []    # List to store images with drawn points
@@ -22,7 +22,7 @@ def output_irl():
 
         # Process the frame number to get corresponding points file
         outnum = (int(frame) - first) / 3
-        outnum = int(outnum / 1.27)
+        outnum = int(outnum / 1.5)
         points = f'{folder}points{outnum}.npy'
 
         # Load points and apply reverse transformation
@@ -33,7 +33,7 @@ def output_irl():
 
 def output_manual():
     folder = '../sim/sim_out2/'
-    irlframes = ['0123', '0237', '0390', '0435', '0489']
+    irlframes = ['0087', '0207', '0399', '0519', '0627']
     outframes = [169, 461, 840, 940, 1157]
     first = 57
     images = []    # List to store images with drawn points
@@ -58,10 +58,12 @@ def output_manual():
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    
+
+# Step 2  
 def output_irl_drawer():
-    folder = '../sim/sim_out2/'
+    folder = '../sim/sim_out_real/'
     irlframes = ['0123', '0237', '0390', '0435', '0489']
+    # irlframes = ['0500', '0700', '1000', '1200']
     first = 57
     images = []    # List to store images with drawn points
 
@@ -69,17 +71,11 @@ def output_irl_drawer():
         file = f'data/frames/viddemo/frame_{frame}.jpg'
         img = cv2.imread(file)
 
-        # Process the frame number to get corresponding points file
-        outnum = (int(frame) - first) / 3
-        # for mpl it is 1
-        # .27
-        conversion = 0.13
-        outnum = int(outnum / conversion)
-        print(outnum)
+        outnum = #
         points = f'{folder}points{outnum}.npy'
 
         # Load points and apply reverse transformation
-        outpts = reverse_transformation(np.load('data/frames/vid3/walls.npy'), np.load(points))
+        outpts = reverse_transformation(np.load('data/frames/vid5/walls.npy'), np.load(points))
 
         # Draw points on the image
         for point in outpts:
@@ -94,21 +90,23 @@ def output_irl_drawer():
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-
+# Step 1
 def output_drawer():
-    folder = '../sim/sim_out2/'
+    folder = '../sim/sim_out_real/'
     #filename = '../sim/sim_out/points50.npy'
     #points = np.load(filename)
-    oldpoints = np.load('data/frames/vid3/points.npy')
-    fpsconversion = 0.15
+    oldpoints = np.load('data/frames/vid5/points.npy')
+    fpsconversion = 0.105
     #print(points)
     #return
-    for i in range(200):
+    for i in range(0, 5000, 10):
+        print(i)
+        
         filename = f'points{i}.npy'
         path = os.path.join(folder, filename)
         points = np.load(path)
         #points = points.reshape(-1, 2)
-        walls = np.load('./data/frames/vid3/walls.npy')
+        walls = np.load('./data/frames/vid5/walls.npy')
         points = reverse_transformation(walls, points)
         #print(points)
         for point in points:
@@ -142,6 +140,22 @@ def reverse_transform_point(x, R, p):
 
 
 def reverse_transformation(walls, points):
+    """
+    Applies a reverse transformation to a set of points based on the provided walls.
+
+    This function takes a list of walls and a list of points, and applies a reverse
+    transformation to the points. The transformation is based on the orientation and
+    position of the first wall in the list.
+
+    Args:
+        walls (list): A list of walls, where each wall is represented by a pair of points.
+                      Each point is a list or array of two coordinates [x, y].
+        points (list): A list of points to be transformed, where each point is a list or
+                       array of two coordinates [x, y].
+
+    Returns:
+        numpy.ndarray: A numpy array of the transformed points.
+    """
     points = np.array(points)
     p = copy.deepcopy(walls[0][1])
     v = p - copy.deepcopy(walls[0][0])
@@ -358,17 +372,23 @@ def main():
     #wall_path = './data/frames/vid3/walls.npy'
     #walls = np.load(wall_path)
     #img = cv2.imread(img_path)
-    #output_drawer()
-    #output_irl_drawer()
+    
+    
+    # output_drawer()
+    output_irl_drawer()
     # pts, images = output_manual()
-    pts, images = output_irl()
-    for i, (image, pt) in enumerate(zip(images, pts)):
-        pt = pt.astype(np.int32)
-        print(pt)
-        cv2.polylines(image, [pt], False, (0, 255, 255), thickness = 3)
-        im = Image.fromarray(image[...,::-1])
-        im.save(f'i{i}.png')
-        print(pt)
+    
+    
+    # pts, images = output_irl()
+    # for i, (image, pt) in enumerate(zip(images, pts)):
+    #     pt = pt.astype(np.int32)
+    #     cv2.polylines(image, [pt], False, (0, 255, 255), thickness = 3)
+    #     im = Image.fromarray(image[...,::-1])
+    #     print(f"saved image to i{i}.png")
+    #     im.save(f'i{i}.png')
+    #     print(pt)
+        
+        
     #output_irl()
     #print(img.shape)
     #points = find_points(img, walls, 10)

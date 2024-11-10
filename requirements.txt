@@ -3,3 +3,5 @@ cvxpylayers
 torch # Might want to install a spcific versino here
 PIL
 plotly
+cvxpylayers
+diffcp
