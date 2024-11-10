@@ -1,8 +1,6 @@
 # Differentiable Vine Simulator
 
-This is a differentiable forward-dynamics simulator for an extendable, soft vine robot. This accompanies our RoboSoft paper, (link when available). We provide also the code for fitting our vine model with various bending models (linear, MLP, real) and video processing code for extracting data fro mreal trials.
-
-This work is based on https://github.com/charm-lab/Vine_Simulator. 
+A differentiable forward-dynamics simulator for an extendable, soft vine robot. This code release accompanies our RoboSoft paper _"Physics-Grounded Differentiable Simulation for Soft Growing Robots"_. In this repo, we also provide the complete code for fitting our vine model to real vine trials, as well as the code for extracting vine positions from video data.
 
 ## Install
 Make sure you have torch in your python environment.
