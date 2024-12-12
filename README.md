@@ -50,4 +50,3 @@ During fitting you can run `tensorboard --logdir=runs` to see tensorboard, but I
 `models` Trained MLPs for out bending model. All of them work pretty much the same, but model_360_good is a bit better
 
 `goodruns` Tensorboard logs of good fitting sessions. For referencing what the loss curves should look like.
-

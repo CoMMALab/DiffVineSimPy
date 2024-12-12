@@ -262,7 +262,7 @@ def train(params: VineParams, true_states, true_nbodies, optimizer, writer, muta
 
         # Estimate pred_dstate from the previous frame
         est_dstate[0] = 0
-        est_dstate[1:] = true_states[1:] - true_states[:-1]
+        est_dstate[1:] = (true_states[1:] - true_states[:-1]) * params.dt
 
         pred_state, pred_dstate, pred_bodies = forward(params, init_headings, init_x, init_y,
                 true_states, est_dstate, true_nbodies)
