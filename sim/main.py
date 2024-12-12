@@ -82,7 +82,7 @@ if __name__ == '__main__':
     # Load MLP from weights
     print('Loading MLP weights from models/model_360_good.pt')
     if params.stiffness_mode == 'nonlinear':
-        params.stiffness_func.load_state_dict(torch.load('models/model_360_good.pt'))
+        params.stiffness_func.load_state_dict(torch.load('models/model_360_good.pt', weights_only=True))
         
     assert params.stiffness_val.dtype == torch.float32
     assert params.m.dtype == torch.float32
@@ -128,7 +128,7 @@ if __name__ == '__main__':
         if frame > 5:
             total_time += time.time() - start
             total_frames += 1
-            print(f'Time per frame{frame}: ', total_time / total_frames)
+            print(f'Time per frame {frame}: ', total_time / total_frames)
 
         if frame % 5 == 0:
             if draw:
