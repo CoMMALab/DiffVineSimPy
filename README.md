@@ -1,6 +1,6 @@
-# Differentiable Vine Simulator
+# Physics-Grounded Differentiable Simulation for Soft Growing Robots
 
-A differentiable forward-dynamics simulator for an extendable, soft vine robot. This code release accompanies our RoboSoft paper _"Physics-Grounded Differentiable Simulation for Soft Growing Robots"_. In this repo, we also provide the complete code for fitting our vine model to real vine trials, as well as the code for extracting vine positions from video data.
+This repository contains a differentiable realtime forward-dynamics simulator for an extendable, soft vine robot that accompanies our RoboSoft paper _"Physics-Grounded Differentiable Simulation for Soft Growing Robots"_. Also included here is the code for system identification for our model from real vine trials and computer vision code for extracting vine positions from video data.
 
 ## Install
 Make sure you have torch in your python environment.
