@@ -1,5 +1,7 @@
 # Physics-Grounded Differentiable Simulation for Soft Growing Robots
 
+_Lucas Chen, Yitian Gao, Sicheng Wang, Francesco Fuentes, Laura H. Blumenschein, Zachary Kingston_
+
 This repository contains a differentiable realtime forward-dynamics simulator for an extendable, soft vine robot that accompanies our RoboSoft paper _"Physics-Grounded Differentiable Simulation for Soft Growing Robots"_. Also included here is the code for system identification for our model from real vine trials and computer vision code for extracting vine positions from video data.
 
 ## Install
